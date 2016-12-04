@@ -1,1 +1,8 @@
 .idea/
+src/server
+src/client
+*.o
+src/server.dSYM/
+src/client.dSYM/
+src/auth-client
+src/auth-server
