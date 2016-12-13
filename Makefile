@@ -8,7 +8,7 @@
 
 CC=gcc
 DEFS=-D_XOPEN_SOURCE=500 -D_BSD_SOURCE -DENDEBUG
-CFLAGS=-Wall -g -std=c99 -pedantic $(DEFS)
+CFLAGS=-Wall -g -std=c99 -pedantic -lm -pthreads $(DEFS)
 LDFLAGS=
 #-lcrypt
 
@@ -29,6 +29,13 @@ src/auth-server.o: src/auth-server.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # DEBUG
+
+runs: src/auth-server
+	src/auth-server
+
+
+runc: src/auth-client
+	src/auth-client
 
 clean:
 	rm -f src/auth-server src/auth-server.o src/auth-client src/auth-client.o
