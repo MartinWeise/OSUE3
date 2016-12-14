@@ -3,6 +3,7 @@
 src/server
 src/client
 sandbox/
+database
 *.o
 src/server.dSYM/
 src/client.dSYM/

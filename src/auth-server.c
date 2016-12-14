@@ -19,14 +19,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <fcntl.h>
-
-
-/* === Constants === */
-
-
-#define SHM_NAME "/1429167database"
-#define MAX_DATA (50)
-#define PERMISSION (0600)
+#include "shared.h"
 
 /* === Macros === */
 
@@ -40,23 +33,32 @@
 #define DEBUG(...)
 #endif
 
+/* === Structs === */
+
+struct entry {
+    char *username;
+    char *password;
+    char *secret;
+    struct entry* next;
+};
+
 /* === Prototypes === */
 
 static void usage(void);
 static int parse_args(int argc, char **argv);
 static void error_exit (const char *fmt, ...);
-
-/* === Structs === */
-
-struct myshm {
-    unsigned int state;
-    unsigned int data[MAX_DATA];
-};
+static void free_resources(void);
+static void parse_database(void);
+static void prepend(struct entry *data);
+static void printlist(void);
 
 /* === Global Variables === */
 
 static char *progname;
 static int shmfd = -1;
+static char *dbname = NULL;
+static struct shm *shared;
+static struct entry *first = NULL;
 
 /* === Implementations === */
 
@@ -78,6 +80,7 @@ static void error_exit (const char *fmt, ...) {
         (void) fprintf(stderr, ": %s", strerror(errno));
     }
     (void) fprintf(stderr, "\n");
+    free_resources();
 
     DEBUG("Shutting down now.\n");
     exit (EXIT_FAILURE);
@@ -95,10 +98,11 @@ static int parse_args(int argc, char **argv) {
                 if (flag_l != -1) {
                     usage();
                 }
-                DEBUG("database: %s\n", optarg);
                 if (optarg == NULL) {
                     return -1;
                 }
+                dbname = optarg;
+                DEBUG("Database is %s.\n", dbname);
                 flag_l = 1;
                 break;
             default: // ?
@@ -114,13 +118,81 @@ static void free_resources(void) {
     }
 }
 
-int main(int argc, char **argv) {
-    struct myshm *shared;
+static void parse_database(void) {
+    FILE *database;
+    char line[1024];
+    int i;
 
+    if (dbname != NULL) {
+
+        if ((database = fopen(dbname, "r")) == NULL) {
+            error_exit("Couldn't open file.");
+        }
+
+        struct entry *data = malloc(sizeof(struct entry));
+
+        while (fgets(line, 1024, database)) {
+            char* tmp = strdup(line);
+            char* tok;
+            for (i=0, tok = strtok(line, ";"); tok && *tok; tok = strtok(NULL, ";\n"), i++) {
+                switch(i) {
+                    case 0:
+                        data = malloc(sizeof(struct entry));
+                        data->username = tok;
+                        break;
+                    case 1:
+                        data->password = tok;
+                        break;
+                    case 2:
+                        data->secret = tok;
+                        break;
+                    default:
+                        error_exit("Malformed input data.");
+                }
+            }
+            prepend(data);
+            free(tmp);
+        }
+    }
+}
+
+static void prepend(struct entry *data) {
+    DEBUG("(%s,%s,%s)\n", data->username, data->password, data->secret);
+//    data->next = first;
+//    first = data;
+}
+
+static void printlist(void) {
+    DEBUG("\n");
+    struct entry *ptr = first;
+    while (ptr != NULL) {
+        DEBUG("[%s;%s;%s]\n", ptr->username, ptr->password, ptr->secret);
+        ptr = ptr->next;
+    }
+}
+
+int main(int argc, char **argv) {
     progname = argv[0];
     if (parse_args(argc, argv) == -1) {
         usage();
     }
+    parse_database();
+    struct entry *data = malloc (sizeof(struct entry));
+//    data->username = "hello";
+//    data->password = "pass";
+//    data->secret = "secret";
+//    data->next = malloc (sizeof(struct entry));
+//    data->next->username = "world";
+//    data->next->password = "pass2";
+//    data->next->secret = NULL;
+//    data->next->next = NULL;
+//    data->next->next = malloc (sizeof(struct entry));
+//    data->next->next->username = "test";
+//    data->next->next->password = "pass3";
+//    data->next->next->secret = "secret 2";
+//    data->next->next->next = NULL;
+    first = data;
+    printlist();
 
     /* Open shared memory object SHM_NAME in for reading and writing,
      * create it if it does not exist */
@@ -131,6 +203,11 @@ int main(int argc, char **argv) {
     /* Extend set size */
     if (ftruncate(shmfd, sizeof *shared) == -1) {
         error_exit("Couldn't extend shared size.");
+    }
+
+    /* Create a new mapping, let the kernel choose the address at which to create the memory  */
+    if ((shared = mmap(NULL, sizeof *shared, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0)) == MAP_FAILED) {
+        error_exit("Couldn't create mapping.");
     }
 
     free_resources();

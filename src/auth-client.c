@@ -16,6 +16,7 @@
 #include <sys/wait.h>
 #include <stdarg.h>
 #include <assert.h>
+#include "shared.h"
 
 
 /* === Constants === */
