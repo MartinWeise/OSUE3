@@ -33,15 +33,6 @@
 #define DEBUG(...)
 #endif
 
-/* === Structs === */
-
-struct entry {
-    char *username;
-    char *password;
-    char *secret;
-    struct entry* next;
-};
-
 /* === Prototypes === */
 
 static void usage(void);
@@ -50,7 +41,6 @@ static void error_exit (const char *fmt, ...);
 static void free_resources(void);
 static void parse_database(void);
 static void prepend(struct entry *data);
-static void printlist(void);
 
 /* === Global Variables === */
 
@@ -112,12 +102,9 @@ static int parse_args(int argc, char **argv) {
     return 0;
 }
 
-static void free_resources(void) {
-    if (shmfd != -1) {
-        (void) close (shmfd);
-    }
-}
-
+/**
+ * OMG use strdup u stupid prick
+ */
 static void parse_database(void) {
     FILE *database;
     char line[1024];
@@ -129,22 +116,22 @@ static void parse_database(void) {
             error_exit("Couldn't open file.");
         }
 
-        struct entry *data = malloc(sizeof(struct entry));
+        struct entry *data;
 
         while (fgets(line, 1024, database)) {
             char* tmp = strdup(line);
             char* tok;
-            for (i=0, tok = strtok(line, ";"); tok && *tok; tok = strtok(NULL, ";\n"), i++) {
+            for (i=0, tok = strtok(tmp, ";"); tok && *tok; tok = strtok(NULL, ";\n"), i++) {
                 switch(i) {
                     case 0:
                         data = malloc(sizeof(struct entry));
-                        data->username = tok;
+                        data->username = strdup(tok);
                         break;
                     case 1:
-                        data->password = tok;
+                        data->password = strdup(tok);
                         break;
                     case 2:
-                        data->secret = tok;
+                        data->secret = strdup(tok);
                         break;
                     default:
                         error_exit("Malformed input data.");
@@ -157,18 +144,30 @@ static void parse_database(void) {
 }
 
 static void prepend(struct entry *data) {
-    DEBUG("(%s,%s,%s)\n", data->username, data->password, data->secret);
-//    data->next = first;
-//    first = data;
+    data->next = first;
+    first = data;
 }
 
-static void printlist(void) {
-    DEBUG("\n");
-    struct entry *ptr = first;
-    while (ptr != NULL) {
-        DEBUG("[%s;%s;%s]\n", ptr->username, ptr->password, ptr->secret);
-        ptr = ptr->next;
+static void free_resources(void) {
+    struct entry *temp;
+
+    if (shmfd != -1) {
+        (void) close (shmfd);
     }
+    /* free database */
+    while (first != NULL) {
+        temp = first;
+        first = first->next;
+        free(temp);
+    }
+    /* Unmap the shared memory */
+    if (munmap(shared, sizeof *shared) == -1) {
+        error_exit("Couldn't unmap shared memory.");
+    }
+//    /* Remove shared memory object */
+//    if (shm_unlink(SHM_NAME) == -1) {
+//        error_exit("Couldn't remove shared memory.");
+//    }
 }
 
 int main(int argc, char **argv) {
@@ -177,22 +176,6 @@ int main(int argc, char **argv) {
         usage();
     }
     parse_database();
-    struct entry *data = malloc (sizeof(struct entry));
-//    data->username = "hello";
-//    data->password = "pass";
-//    data->secret = "secret";
-//    data->next = malloc (sizeof(struct entry));
-//    data->next->username = "world";
-//    data->next->password = "pass2";
-//    data->next->secret = NULL;
-//    data->next->next = NULL;
-//    data->next->next = malloc (sizeof(struct entry));
-//    data->next->next->username = "test";
-//    data->next->next->password = "pass3";
-//    data->next->next->secret = "secret 2";
-//    data->next->next->next = NULL;
-    first = data;
-    printlist();
 
     /* Open shared memory object SHM_NAME in for reading and writing,
      * create it if it does not exist */
@@ -209,6 +192,7 @@ int main(int argc, char **argv) {
     if ((shared = mmap(NULL, sizeof *shared, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0)) == MAP_FAILED) {
         error_exit("Couldn't create mapping.");
     }
+
 
     free_resources();
     return EXIT_SUCCESS;

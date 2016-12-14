@@ -9,11 +9,18 @@
 
 /* === Constants === */
 
-#define SHM_NAME "/1429167database"
+#define SHM_NAME "/1429167fragment"
 #define PERMISSION (0600)
 #define MAX_DATA (50)
 
 /* === Structs === */
+
+struct entry {
+    char *username;
+    char *password;
+    char *secret;
+    struct entry* next;
+};
 
 struct shm {
     unsigned int state;

@@ -36,16 +36,52 @@
 #define DEBUG(...)
 #endif
 
-/* === Prototypes === */
-
-
-
 /* === Global Variables === */
 
+char *progname;
+
+/* === Prototypes === */
+
+static void usage();
+static void parse_args(int argc, char **argv);
 
 
 /* === Implementations === */
 
+static void usage() {
+    fprintf(stderr, "USAGE: %s { -r | -l } username password\n", progname);
+    exit(EXIT_FAILURE);
+}
+
+static void parse_args(int argc, char **argv) {
+    int flag_l = -1;
+    int flag_r = -1;
+    char opt;
+    progname = argv[0];
+    if (argc != 4 || optind != 1) {
+        usage();
+    }
+    DEBUG("argc %d, optind %d\n",argc, optind);
+    while ((opt = getopt (argc, argv, "r:l:")) != -1) {
+        switch (opt) {
+            case 'l':
+                if (flag_l != -1 || optarg == NULL) {
+                    usage();
+                }
+                flag_l = 1;
+                break;
+            case 'r':
+                if (flag_r != -1 || optarg == NULL) {
+                    usage();
+                }
+                flag_r = 1;
+                break;
+            default: // ?
+                break;
+        }
+    }
+}
+
 int main(int argc, char **argv) {
-    return EXIT_SUCCESS;
+    parse_args(argc, argv);
 }
