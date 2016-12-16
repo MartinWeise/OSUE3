@@ -11,7 +11,19 @@
 
 #define SHM_NAME "/1429167fragment"
 #define PERMISSION (0600)
-#define MAX_DATA (50)
+#define MAX_DATA (100)
+
+#define SEM_NAME "/sem_1"
+
+/* === Enums === */
+
+typedef enum {
+    WRITE, READ, LOGOUT
+} cmd;
+
+typedef enum {
+    REGISTER, LOGIN
+} mode;
 
 /* === Structs === */
 
@@ -22,7 +34,11 @@ struct entry {
     struct entry* next;
 };
 
-struct shm {
-    unsigned int state;
-    unsigned int data[MAX_DATA];
+/**
+ * Defines a shared memory consisting a command and data from the client.
+ */
+struct shared_command {
+    struct entry *data;
+    mode modus;
+    cmd command;
 };

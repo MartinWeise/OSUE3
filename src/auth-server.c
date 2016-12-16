@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <fcntl.h>
+#include <semaphore.h>
 #include "shared.h"
 
 /* === Macros === */
@@ -40,15 +41,15 @@ static int parse_args(int argc, char **argv);
 static void error_exit (const char *fmt, ...);
 static void free_resources(void);
 static void parse_database(void);
-static void prepend(struct entry *data);
 
 /* === Global Variables === */
 
 static char *progname;
 static int shmfd = -1;
 static char *dbname = NULL;
-static struct shm *shared;
+static struct shared_command *shared;
 static struct entry *first = NULL;
+static sem_t *sem;
 
 /* === Implementations === */
 
@@ -102,12 +103,9 @@ static int parse_args(int argc, char **argv) {
     return 0;
 }
 
-/**
- * OMG use strdup u stupid prick
- */
 static void parse_database(void) {
     FILE *database;
-    char line[1024];
+    char line[MAX_DATA];
     int i;
 
     if (dbname != NULL) {
@@ -118,10 +116,11 @@ static void parse_database(void) {
 
         struct entry *data;
 
-        while (fgets(line, 1024, database)) {
+        while (fgets(line, MAX_DATA, database)) {
             char* tmp = strdup(line);
             char* tok;
             for (i=0, tok = strtok(tmp, ";"); tok && *tok; tok = strtok(NULL, ";\n"), i++) {
+                DEBUG("tok %s\n", tok);
                 switch(i) {
                     case 0:
                         data = malloc(sizeof(struct entry));
@@ -137,15 +136,11 @@ static void parse_database(void) {
                         error_exit("Malformed input data.");
                 }
             }
-            prepend(data);
+            data->next = first;
+            first = data;
             free(tmp);
         }
     }
-}
-
-static void prepend(struct entry *data) {
-    data->next = first;
-    first = data;
 }
 
 static void free_resources(void) {
@@ -164,10 +159,18 @@ static void free_resources(void) {
     if (munmap(shared, sizeof *shared) == -1) {
         error_exit("Couldn't unmap shared memory.");
     }
-//    /* Remove shared memory object */
-//    if (shm_unlink(SHM_NAME) == -1) {
-//        error_exit("Couldn't remove shared memory.");
-//    }
+    /* Remove shared memory object */
+    if (shm_unlink(SHM_NAME) == -1) {
+        error_exit("Couldn't remove shared memory.");
+    }
+    /* Unlink Semaphore */
+    if (sem_unlink(SEM_NAME) == -1) {
+        error_exit("Couldn't remove semaphore.");
+    }
+    /* Close Semaphores */
+    if (sem_close(sem) == -1) {
+        error_exit("Couldn't close semaphore.");
+    }
 }
 
 int main(int argc, char **argv) {
@@ -193,6 +196,18 @@ int main(int argc, char **argv) {
         error_exit("Couldn't create mapping.");
     }
 
+    /* Create Semaphores */
+    if ((sem = sem_open(SEM_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+        error_exit("Couldn't create semaphore.");
+    }
+
+    DEBUG("Server running ...\n");
+    for(int i = 0; i < 3; ++i) {
+        sem_wait(sem);
+        DEBUG("critical: %s: i = %d\n", argv[0], i);
+        sleep(1);
+        sem_post(sem);
+    }
 
     free_resources();
     return EXIT_SUCCESS;

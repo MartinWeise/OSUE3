@@ -8,21 +8,21 @@
 
 CC=gcc
 DEFS=-D_XOPEN_SOURCE=500 -D_BSD_SOURCE -DENDEBUG
-CFLAGS=-Wall -g -std=c99 -pedantic -lm -pthread $(DEFS)
-LDFLAGS=
+CFLAGS=-Wall -g -std=c99 -pedantic -lm -lcrypto -pthread $(DEFS)
+LDFLAGS=-lrt -lpthread
 
 all: src/auth-server src/auth-client
 
 # COMPILE
 
 src/auth-client: src/auth-client.o
-	$(CC) $(LDFLAGS) -o $@ $^ -lrt
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 src/auth-client.o: src/auth-client.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 src/auth-server: src/auth-server.o
-	$(CC) $(LDFLAGS) -o $@ $^ -lrt
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 src/auth-server.o: src/auth-server.c
 	$(CC) $(CFLAGS) -c -o $@ $<
