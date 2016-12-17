@@ -41,14 +41,17 @@ static int parse_args(int argc, char **argv);
 static void error_exit (const char *fmt, ...);
 static void free_resources(void);
 static void parse_database(void);
+static void signal_handler(int sig);
+static void save(void);
 
 /* === Global Variables === */
 
 static char *progname;
 static int shmfd = -1;
 static char *dbname = NULL;
-static struct shared_command *shared;
+static struct shared_command *shared = NULL;
 static struct entry *first = NULL;
+volatile sig_atomic_t terminating = 0;
 static sem_t *sem;
 
 /* === Implementations === */
@@ -120,7 +123,6 @@ static void parse_database(void) {
             char* tmp = strdup(line);
             char* tok;
             for (i=0, tok = strtok(tmp, ";"); tok && *tok; tok = strtok(NULL, ";\n"), i++) {
-                DEBUG("tok %s\n", tok);
                 switch(i) {
                     case 0:
                         data = malloc(sizeof(struct entry));
@@ -146,6 +148,11 @@ static void parse_database(void) {
 static void free_resources(void) {
     struct entry *temp;
 
+    if (terminating == 1) {
+        return;
+    }
+    terminating = 1;
+    /* Close shared memory */
     if (shmfd != -1) {
         (void) close (shmfd);
     }
@@ -173,8 +180,45 @@ static void free_resources(void) {
     }
 }
 
+static void save(void) {
+    FILE *db;
+    struct entry *ptr = first;
+
+    if ((db = fopen("auth-server.db.csv", "w+")) == NULL) {
+        error_exit("Couldn't open the database file.");
+    }
+    DEBUG("Saving to auth-server.db.csv.\n");
+    while (ptr != NULL) {
+        fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
+        ptr = ptr->next;
+    }
+}
+
+static void signal_handler(int sig) {
+    DEBUG("Signal caught: %s\n", (sig==SIGINT ? "SIGINT" : "OTHER"));
+    free_resources();
+    exit (EXIT_SUCCESS);
+}
+
 int main(int argc, char **argv) {
+    const int signals[] = {SIGINT, SIGTERM};
+    struct sigaction s;
+    sigset_t blocked_signals;
+
     progname = argv[0];
+    /* Fill set with all signals */
+    if(sigfillset(&blocked_signals) < 0) {
+        error_exit("Failed to fill signal set.");
+    }
+    s.sa_handler = signal_handler;
+    (void) memcpy(&s.sa_mask, &blocked_signals, sizeof(s.sa_mask));
+    s.sa_flags = SA_RESTART;
+    for(int i = 0; i < 2; i++) {
+        if (sigaction(signals[i], &s, NULL) < 0) {
+            error_exit("Changing of signal failed.");
+        }
+    }
+
     if (parse_args(argc, argv) == -1) {
         usage();
     }
@@ -185,29 +229,37 @@ int main(int argc, char **argv) {
     if ((shmfd = shm_open(SHM_NAME, O_RDWR | O_CREAT, PERMISSION)) == -1) {
         error_exit("Couldn't init shared.");
     }
-
     /* Extend set size */
     if (ftruncate(shmfd, sizeof *shared) == -1) {
         error_exit("Couldn't extend shared size.");
     }
-
+    shared = malloc(sizeof(struct shared_command));
+    shared->data = malloc(sizeof(struct entry));
     /* Create a new mapping, let the kernel choose the address at which to create the memory  */
     if ((shared = mmap(NULL, sizeof *shared, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0)) == MAP_FAILED) {
         error_exit("Couldn't create mapping.");
     }
-
     /* Create Semaphores */
-    if ((sem = sem_open(SEM_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+    if ((sem = sem_open(SEM_NAME, O_CREAT | O_EXCL | O_TRUNC, PERMISSION, 1)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore.");
     }
 
-    DEBUG("Server running ...\n");
-    for(int i = 0; i < 3; ++i) {
-        sem_wait(sem);
-        DEBUG("critical: %s: i = %d\n", argv[0], i);
-        sleep(1);
-        sem_post(sem);
-    }
+//    DEBUG("Server running ...\n");
+//    for(int i = 0; i < 3; ++i) {
+//        sem_wait(sem);
+//        DEBUG("critical: %s: i = %d\n", argv[0], i);
+//        sleep(1);
+//        sem_post(sem);
+//    }
+    DEBUG("OK\n");
+//    while(1) {
+//        if (shared != NULL) {
+//            DEBUG("%s\n",shared->data->username);
+//            break;
+//        }
+//    }
+
+    save();
 
     free_resources();
     return EXIT_SUCCESS;

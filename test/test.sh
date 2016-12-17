@@ -39,3 +39,12 @@ if src/auth-server idonotbelonghere 2>&1 | grep -q "USAGE"; then
 else
     echo "FAILED"
 fi
+
+#! DATABASE (CHECK SAVING)
+echo "foo;password;secret\nbar;1234\nbaz;23456;santa" > test/input.txt
+src/auth-server -l test/input.txt
+if cat auth-server.db.csv | grep -q "baz;23456;santa\nbar;1234;(null)\nfoo;password;secret"; then
+    echo "OK"
+else
+    echo "FAILED"
+fi

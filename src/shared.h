@@ -13,7 +13,7 @@
 #define PERMISSION (0600)
 #define MAX_DATA (100)
 
-#define SEM_NAME "/sem_1"
+#define SEM_NAME "/1429167sem"
 
 /* === Enums === */
 

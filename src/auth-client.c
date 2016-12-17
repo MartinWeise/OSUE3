@@ -45,11 +45,12 @@
 char *progname;
 static int shmfd = -1;
 static struct shared_command *shared;
-static sem_t *sem;
+static sem_t *sem = NULL;
+volatile sig_atomic_t terminating = 0;
 
 /* === Prototypes === */
 
-static void usage();
+static void usage(void);
 static void error_exit (const char *fmt, ...);
 static void free_resources(void);
 static void parse_args(int argc, char **argv);
@@ -58,7 +59,7 @@ static void command(bool printhelp);
 /* === Implementations === */
 
 static void usage() {
-    fprintf(stderr, "USAGE: %s { -r | -l } username password\n", progname);
+    fprintf (stderr, "USAGE: %s { -r | -l } username password\n", progname);
     exit(EXIT_FAILURE);
 }
 
@@ -75,6 +76,7 @@ static void error_exit (const char *fmt, ...) {
         (void) fprintf(stderr, ": %s", strerror(errno));
     }
     (void) fprintf(stderr, "\n");
+
     free_resources();
 
     DEBUG("Shutting down now.\n");
@@ -82,6 +84,10 @@ static void error_exit (const char *fmt, ...) {
 }
 
 static void free_resources(void) {
+    if (terminating == 1) {
+        return;
+    }
+    terminating = 1;
     if (shmfd != -1) {
         (void) close (shmfd);
     }
@@ -93,9 +99,13 @@ static void free_resources(void) {
     if (shm_unlink(SHM_NAME) == -1) {
         error_exit("Couldn't remove shared memory.");
     }
-    /* Remove Semaphores */
-    if (sem_close(sem) == -1) {
+    /* Unlink Semaphore */
+    if (sem_unlink(SEM_NAME) == -1) {
         error_exit("Couldn't remove semaphore.");
+    }
+    /* Close Semaphores */
+    if (sem_close(sem) == -1) {
+        error_exit("Couldn't close semaphore.");
     }
 }
 
@@ -177,10 +187,18 @@ int main(int argc, char **argv) {
         error_exit("Couldn't create mapping.");
     }
 
-    /* Create Semaphores */
-    if ((sem = sem_open(SEM_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
-        error_exit("Couldn't create semaphore.");
+    /* Open Semaphores */
+    if ((sem = sem_open(SEM_NAME, O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+        error_exit("Couldn't open semaphore.");
     }
+
+    DEBUG("Client running ...\n");
+//    for(int i = 0; i < 3; ++i) {
+//        sem_wait(sem);
+//        DEBUG("critical: %s: i = %d\n", argv[0], i);
+//        sleep(1);
+//        sem_post(sem);
+//    }
 
     command(true);
 }
