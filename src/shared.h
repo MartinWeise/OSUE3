@@ -1,11 +1,3 @@
-/**
- * @file shared.h
- * @author Martin Weise <e1429167@student.tuwien.ac.at>
- * @date 13.12.2016
- *
- * @brief Shared memory header file.
- *
- **/
 
 /* === Constants === */
 
@@ -28,9 +20,9 @@ typedef enum {
 /* === Structs === */
 
 struct entry {
-    char *username;
-    char *password;
-    char *secret;
+    char username[MAX_DATA];
+    char password[MAX_DATA];
+    char secret[MAX_DATA];
     struct entry* next;
 };
 
@@ -42,3 +34,21 @@ struct shared_command {
     mode modus;
     cmd command;
 };
+
+/* === Macros === */
+
+/**
+ * @brief Provides a debugging function to output status messages
+ * @details Activate/Deactivate by adding/removing -DENDEBUG to DEFS in Makefile.
+ */
+#if defined(ENDEBUG)
+#define DEBUG(...) do { fprintf(stderr, __VA_ARGS__); } while(0)
+#else
+#define DEBUG(...)
+#endif
+
+/* === Prototypes === */
+
+void error_exit (const char *fmt, ...);
+void free_resources(void);
+void signal_handler(int sig);

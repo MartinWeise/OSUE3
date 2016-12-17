@@ -26,33 +26,22 @@
 
 /* === Constants === */
 
-/** The buffer size. */
-
-/* === Macros === */
-
-/**
- * @brief Provides a debugging function to output status messages
- * @details Activate/Deactivate by adding/removing -DENDEBUG to DEFS in Makefile.
- */
-#if defined(ENDEBUG)
-#define DEBUG(...) do { fprintf(stderr, __VA_ARGS__); } while(0)
-#else
-#define DEBUG(...)
-#endif
 
 /* === Global Variables === */
 
+extern sig_atomic_t terminating;
+extern sem_t *sem_client;
+
 char *progname;
-static int shmfd = -1;
+static int shmfd;
 static struct shared_command *shared;
-static sem_t *sem = NULL;
-volatile sig_atomic_t terminating = 0;
 
 /* === Prototypes === */
 
+extern void free_resources(void);
+extern void error_exit (const char *fmt, ...);
+
 static void usage(void);
-static void error_exit (const char *fmt, ...);
-static void free_resources(void);
 static void parse_args(int argc, char **argv);
 static void command(bool printhelp);
 
@@ -63,52 +52,6 @@ static void usage() {
     exit(EXIT_FAILURE);
 }
 
-static void error_exit (const char *fmt, ...) {
-    va_list ap;
-
-    (void) fprintf(stderr, "%s: ", progname);
-    if (fmt != NULL) {
-        va_start(ap, fmt);
-        (void) vfprintf(stderr, fmt, ap);
-        va_end(ap);
-    }
-    if (errno != 0) {
-        (void) fprintf(stderr, ": %s", strerror(errno));
-    }
-    (void) fprintf(stderr, "\n");
-
-    free_resources();
-
-    DEBUG("Shutting down now.\n");
-    exit (EXIT_FAILURE);
-}
-
-static void free_resources(void) {
-    if (terminating == 1) {
-        return;
-    }
-    terminating = 1;
-    if (shmfd != -1) {
-        (void) close (shmfd);
-    }
-    /* Unmap the shared memory */
-    if (munmap(shared, sizeof *shared) == -1) {
-        error_exit("Couldn't unmap shared memory.");
-    }
-    /* Remove shared memory object */
-    if (shm_unlink(SHM_NAME) == -1) {
-        error_exit("Couldn't remove shared memory.");
-    }
-    /* Unlink Semaphore */
-    if (sem_unlink(SEM_NAME) == -1) {
-        error_exit("Couldn't remove semaphore.");
-    }
-    /* Close Semaphores */
-    if (sem_close(sem) == -1) {
-        error_exit("Couldn't close semaphore.");
-    }
-}
-
 static void parse_args(int argc, char **argv) {
     int flag_l = -1;
     int flag_r = -1;
@@ -117,7 +60,6 @@ static void parse_args(int argc, char **argv) {
     if (argc != 4 || optind != 1) {
         usage();
     }
-    shared = malloc(sizeof(struct shared_command));
     while ((opt = getopt (argc, argv, "r:l:")) != -1) {
         switch (opt) {
             case 'l':
@@ -125,16 +67,12 @@ static void parse_args(int argc, char **argv) {
                     usage();
                 }
                 flag_l = 1;
-                DEBUG("Login %d\n", LOGIN);
-                shared->modus = LOGIN;
                 break;
             case 'r':
                 if (flag_r != -1 || optarg == NULL) {
                     usage();
                 }
                 flag_r = 1;
-                DEBUG("Register %d\n", REGISTER);
-                shared->modus = REGISTER;
                 break;
             default: // ?
                 break;
@@ -174,12 +112,7 @@ int main(int argc, char **argv) {
     /* Open shared memory object SHM_NAME in for reading and writing,
      * create it if it does not exist */
     if ((shmfd = shm_open(SHM_NAME, O_RDWR | O_CREAT, PERMISSION)) == -1) {
-        error_exit("Couldn't init shared.");
-    }
-
-    /* Extend set size */
-    if (ftruncate(shmfd, sizeof *shared) == -1) {
-        error_exit("Couldn't extend shared size.");
+        error_exit("Couldn't access shared fragement. Is the server running?");
     }
 
     /* Create a new mapping, let the kernel choose the address at which to create the memory  */
@@ -188,11 +121,12 @@ int main(int argc, char **argv) {
     }
 
     /* Open Semaphores */
-    if ((sem = sem_open(SEM_NAME, O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
-        error_exit("Couldn't open semaphore.");
-    }
+//    if ((sem = sem_open(SEM_NAME, O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+//        error_exit("Couldn't open semaphore.");
+//    }
 
     DEBUG("Client running ...\n");
+
 //    for(int i = 0; i < 3; ++i) {
 //        sem_wait(sem);
 //        DEBUG("critical: %s: i = %d\n", argv[0], i);

@@ -15,17 +15,14 @@ all: src/auth-server src/auth-client
 
 # COMPILE
 
-src/auth-client: src/auth-client.o
-	$(CC) -o $@ $^ $(LDFLAGS)
-
-src/auth-client.o: src/auth-client.c
+%.o: %.c %.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-src/auth-server: src/auth-server.o
+src/auth-server: src/auth-server.o src/shared.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-src/auth-server.o: src/auth-server.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+src/auth-client: src/auth-client.o src/shared.o
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 # DEBUG
 
@@ -40,5 +37,6 @@ test: all
 
 clean:
 	rm -f src/auth-server src/auth-server.o src/auth-client src/auth-client.o
+	rm -f /dev/shm/1429167fragment
 
 .PHONY: clean

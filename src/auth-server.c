@@ -36,47 +36,30 @@
 
 /* === Prototypes === */
 
+extern void signal_handler(int sig);
+extern void error_exit (const char *fmt, ...);
+extern void free_resources(void);
+
 static void usage(void);
 static int parse_args(int argc, char **argv);
-static void error_exit (const char *fmt, ...);
-static void free_resources(void);
 static void parse_database(void);
-static void signal_handler(int sig);
 static void save(void);
 
 /* === Global Variables === */
 
+extern int shmfd;
+extern sig_atomic_t terminating;
+extern sem_t *sem_server;
+
+static struct entry *first;
 static char *progname;
-static int shmfd = -1;
 static char *dbname = NULL;
 static struct shared_command *shared = NULL;
-static struct entry *first = NULL;
-volatile sig_atomic_t terminating = 0;
-static sem_t *sem;
 
 /* === Implementations === */
 
 static void usage(void) {
     (void) fprintf (stderr, "USAGE: %s [-l database]\n", progname);
-    exit (EXIT_FAILURE);
-}
-
-static void error_exit (const char *fmt, ...) {
-    va_list ap;
-
-    (void) fprintf(stderr, "%s: ", progname);
-    if (fmt != NULL) {
-        va_start(ap, fmt);
-        (void) vfprintf(stderr, fmt, ap);
-        va_end(ap);
-    }
-    if (errno != 0) {
-        (void) fprintf(stderr, ": %s", strerror(errno));
-    }
-    (void) fprintf(stderr, "\n");
-    free_resources();
-
-    DEBUG("Shutting down now.\n");
     exit (EXIT_FAILURE);
 }
 
@@ -126,13 +109,13 @@ static void parse_database(void) {
                 switch(i) {
                     case 0:
                         data = malloc(sizeof(struct entry));
-                        data->username = strdup(tok);
+                        strncpy(data->username, tok, MAX_DATA);
                         break;
                     case 1:
-                        data->password = strdup(tok);
+                        strncpy(data->password, tok, MAX_DATA);
                         break;
                     case 2:
-                        data->secret = strdup(tok);
+                        strncpy(data->secret, tok, MAX_DATA);
                         break;
                     default:
                         error_exit("Malformed input data.");
@@ -142,41 +125,6 @@ static void parse_database(void) {
             first = data;
             free(tmp);
         }
-    }
-}
-
-static void free_resources(void) {
-    struct entry *temp;
-
-    if (terminating == 1) {
-        return;
-    }
-    terminating = 1;
-    /* Close shared memory */
-    if (shmfd != -1) {
-        (void) close (shmfd);
-    }
-    /* free database */
-    while (first != NULL) {
-        temp = first;
-        first = first->next;
-        free(temp);
-    }
-    /* Unmap the shared memory */
-    if (munmap(shared, sizeof *shared) == -1) {
-        error_exit("Couldn't unmap shared memory.");
-    }
-    /* Remove shared memory object */
-    if (shm_unlink(SHM_NAME) == -1) {
-        error_exit("Couldn't remove shared memory.");
-    }
-    /* Unlink Semaphore */
-    if (sem_unlink(SEM_NAME) == -1) {
-        error_exit("Couldn't remove semaphore.");
-    }
-    /* Close Semaphores */
-    if (sem_close(sem) == -1) {
-        error_exit("Couldn't close semaphore.");
     }
 }
 
@@ -192,12 +140,6 @@ static void save(void) {
         fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
         ptr = ptr->next;
     }
-}
-
-static void signal_handler(int sig) {
-    DEBUG("Signal caught: %s\n", (sig==SIGINT ? "SIGINT" : "OTHER"));
-    free_resources();
-    exit (EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv) {
@@ -233,17 +175,17 @@ int main(int argc, char **argv) {
     if (ftruncate(shmfd, sizeof *shared) == -1) {
         error_exit("Couldn't extend shared size.");
     }
-    shared = malloc(sizeof(struct shared_command));
-    shared->data = malloc(sizeof(struct entry));
     /* Create a new mapping, let the kernel choose the address at which to create the memory  */
     if ((shared = mmap(NULL, sizeof *shared, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0)) == MAP_FAILED) {
         error_exit("Couldn't create mapping.");
     }
+    if (shared == (struct shared_command*) -1 || shared->data == (struct entry*) -1) {
+        error_exit("mmap did not init a shared_command.");
+    }
     /* Create Semaphores */
-    if ((sem = sem_open(SEM_NAME, O_CREAT | O_EXCL | O_TRUNC, PERMISSION, 1)) == SEM_FAILED) {
+    if ((sem_server = sem_open(SEM_NAME, O_CREAT | O_EXCL | O_TRUNC, PERMISSION, 1)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore.");
     }
-
 //    DEBUG("Server running ...\n");
 //    for(int i = 0; i < 3; ++i) {
 //        sem_wait(sem);
@@ -252,6 +194,7 @@ int main(int argc, char **argv) {
 //        sem_post(sem);
 //    }
     DEBUG("OK\n");
+    while(1) {}
 //    while(1) {
 //        if (shared != NULL) {
 //            DEBUG("%s\n",shared->data->username);
