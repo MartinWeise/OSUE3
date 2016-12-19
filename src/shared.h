@@ -10,12 +10,17 @@
 /* === Enums === */
 
 typedef enum {
-    WRITE, READ, LOGOUT
+    COMMAND_NONE, WRITE, READ, LOGOUT
 } cmd;
 
 typedef enum {
     REGISTER, LOGIN
 } mode;
+
+typedef enum {
+    STATUS_NONE, LOGIN_SUCCESS, LOGIN_FAILED, REGISTER_SUCCESS,
+    REGISTER_FAILED, WRITE_SECRET_SUCCESS, WRITE_SECRET_FAILED
+} status;
 
 /* === Structs === */
 
@@ -30,9 +35,13 @@ struct entry {
  * Defines a shared memory consisting a command and data from the client.
  */
 struct shared_command {
-    struct entry *data;
+    status status;
     mode modus;
     cmd command;
+    suseconds_t  id;
+    char username[MAX_DATA];
+    char password[MAX_DATA];
+    char secret[MAX_DATA];
 };
 
 /* === Macros === */
@@ -52,3 +61,4 @@ struct shared_command {
 void error_exit (const char *fmt, ...);
 void free_resources(void);
 void signal_handler(int sig);
+void empty_shared(void);

@@ -37,6 +37,6 @@ test: all
 
 clean:
 	rm -f src/auth-server src/auth-server.o src/auth-client src/auth-client.o
-	rm -f /dev/shm/1429167fragment
+	rm -f /dev/shm/1429167fragment /dev/shm/sem.1429167sem
 
 .PHONY: clean

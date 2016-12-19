@@ -20,6 +20,7 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <semaphore.h>
+#include <sys/time.h>
 #include "shared.h"
 
 /* === Global Variables === */
@@ -30,9 +31,9 @@ struct entry *first = NULL;
 
 int shmfd = -1;
 
-int sem_client = -1;
+sem_t *sem_client;
 
-int sem_server = -1;
+sem_t *sem_server;
 
 struct shared_command *shared = NULL;
 
@@ -65,30 +66,39 @@ void free_resources(void) {
         return;
     }
     terminating = 1;
+    /* Close shared memory */
     if (shmfd != -1) {
         (void) close (shmfd);
     }
+    /* Free all space from linked list */
     while (first != NULL) {
         temp = first;
         first = first->next;
         free(temp);
     }
     /* Unmap the shared memory */
-    if (munmap(shared, sizeof *shared) == -1) {
+    if (shmfd != -1 && munmap(shared, sizeof *shared) == -1) {
         error_exit("Couldn't unmap shared memory.");
     }
     /* Remove shared memory object */
-    if (shm_unlink(SHM_NAME) == -1) {
+    if (shmfd != -1 && shm_unlink(SHM_NAME) == -1) {
         error_exit("Couldn't remove shared memory.");
     }
-    /* Unlink Semaphore */
-    if (sem_unlink(SEM_NAME) == -1) {
+    /* Unlink Semaphores */
+    if (sem_server != SEM_FAILED && sem_unlink(SEM_NAME) == -1) {
         error_exit("Couldn't remove semaphore.");
     }
     /* Close Semaphores */
-    if (sem_close(sem_server) == -1) {
-        error_exit("Couldn't close semaphore.");
+    if (sem_server != SEM_FAILED && sem_close(sem_server) == -1) {
+        error_exit("Couldn't close client semaphore.");
     }
+}
+
+void empty_shared(void) {
+//    shared->modus = MODE_NONE;
+//    DEBUG("OK 2\n");
+//    shared->command = CMD_NONE;
+//    shared->status = STATUS_NONE;
 }
 
 void signal_handler(int sig) {
