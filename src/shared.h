@@ -5,7 +5,7 @@
 #define PERMISSION (0600)
 #define MAX_DATA (100)
 
-#define SEM_NAME "/1429167sem"
+#define SEM1_NAME "/1429167sem1"
 
 /* === Enums === */
 
@@ -14,7 +14,7 @@ typedef enum {
 } cmd;
 
 typedef enum {
-    REGISTER, LOGIN
+    MODE_UNSET, REGISTER, LOGIN
 } mode;
 
 typedef enum {
@@ -57,8 +57,3 @@ struct shared_command {
 #endif
 
 /* === Prototypes === */
-
-void error_exit (const char *fmt, ...);
-void free_resources(void);
-void signal_handler(int sig);
-void empty_shared(void);

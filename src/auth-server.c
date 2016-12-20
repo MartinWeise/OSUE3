@@ -37,16 +37,13 @@
 
 /* === Prototypes === */
 
-extern void signal_handler(int sig);
-extern void error_exit (const char *fmt, ...);
-extern void free_resources(void);
-
+static void signal_handler(int sig);
+static void error_exit (const char *fmt, ...);
+static void free_resources(void);
 static void usage(void);
 static int parse_args(int argc, char **argv);
 static void parse_database(void);
-static int login(char *username, char *password);
 static void save(void);
-static int registeR(char *username, char *password);
 
 /* === Global Variables === */
 
@@ -131,33 +128,6 @@ static void parse_database(void) {
     }
 }
 
-static int login(char *username, char *password) {
-    struct entry *tmp = first;
-    while (tmp != NULL) {
-        if (strcmp(tmp->username, username) == 0 && strcmp(tmp->password, password) == 0) {
-            /* copy secret for READ command */
-            strncpy(shared->secret, tmp->secret, MAX_DATA);
-            return 1;
-        }
-        tmp = tmp->next;
-    }
-    return -1;
-}
-
-static int registeR(char *username, char *password) {
-    struct entry *ptr = first;
-    while (ptr != NULL) {
-        if (strcmp(ptr->username, username) == 0 && strcmp(ptr->password, password) == 0) {
-            return -1;
-        }
-        ptr = ptr->next;
-    }
-    struct entry *data = malloc(sizeof(struct entry));
-    data->next = first;
-    first = data;
-    return 1;
-}
-
 static void save(void) {
     FILE *db;
     struct entry *ptr = first;
@@ -170,6 +140,67 @@ static void save(void) {
         fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
         ptr = ptr->next;
     }
+}
+
+static void error_exit (const char *fmt, ...) {
+    va_list ap;
+
+    (void) fprintf(stderr, "%s: ", progname);
+    if (fmt != NULL) {
+        va_start(ap, fmt);
+        (void) vfprintf(stderr, fmt, ap);
+        va_end(ap);
+    }
+    if (errno != 0) {
+        (void) fprintf(stderr, ": %s", strerror(errno));
+    }
+    (void) fprintf(stderr, "\n");
+    free_resources();
+
+    save();
+    DEBUG("Shutting down now.\n");
+    exit (EXIT_FAILURE);
+}
+
+static void free_resources(void) {
+    struct entry *temp;
+    if (terminating == 1) {
+        return;
+    }
+    terminating = 1;
+    /* Close shared memory */
+    if (shmfd != -1) {
+        (void) close (shmfd);
+    }
+    /* Free all space from linked list */
+    while (first != NULL) {
+        temp = first;
+        first = first->next;
+        free(temp);
+    }
+    /* Unmap the shared memory */
+    if (munmap(shared, sizeof *shared) == -1) {
+        error_exit("Couldn't unmap shared memory.");
+    }
+    /* Remove shared memory object */
+    if (shm_unlink(SHM_NAME) == -1) {
+        error_exit("Couldn't remove shared memory.");
+    }
+    /* Close semaphor */
+    if (sem_close(sem_server) == -1) {
+        error_exit("Couldn't remove semaphor 1.");
+    }
+    /* Unlink semaphor */
+    if (sem_unlink(SEM1_NAME)) {
+        error_exit("Couldn't unlink sempaphor 1.");
+    }
+    /* save */
+    save();
+}
+
+static void signal_handler(int sig) {
+    free_resources();
+    exit (EXIT_SUCCESS);
 }
 
 int main(int argc, char **argv) {
@@ -214,15 +245,13 @@ int main(int argc, char **argv) {
     }
     strncpy(shared->username,"hello", MAX_DATA);
     /* Create Semaphores */
-    if ((sem_server = sem_open(SEM_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+    if ((sem_server = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore.");
     }
     DEBUG("Server running ...\n");
     while(1) {
         switch (shared->modus) {
             case REGISTER:
-                shared->status = (registeR(shared->username, shared->password) == -1
-                                  ? REGISTER_FAILED : REGISTER_SUCCESS);
                 break;
             case LOGIN:
                 switch (shared->command) {
@@ -231,10 +260,6 @@ int main(int argc, char **argv) {
                         break;
                     case READ:
 //                        DEBUG("Login => READ\n");
-                        if (login(shared->username, shared->password) == -1) {
-                            shared->status = LOGIN_FAILED;
-                            break;
-                        }
                         shared->status = LOGIN_SUCCESS;
                         break;
                     case LOGOUT:
@@ -245,13 +270,8 @@ int main(int argc, char **argv) {
                 }
                 break;
             default:
-                DEBUG("Modus: %d\n", shared->modus);
-                assert(0==1);
+                break;
         }
     }
-
-    save();
-
-    free_resources();
     return EXIT_SUCCESS;
 }
