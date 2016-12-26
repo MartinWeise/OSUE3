@@ -69,14 +69,14 @@ static void parse_args(int argc, char **argv) {
                     usage();
                 }
                 flag_l = 1;
-                m = 1;
+                m = LOGIN;
                 break;
             case 'r':
                 if (flag_r != -1 || optarg == NULL) {
                     usage();
                 }
                 flag_r = 1;
-                m = 0;
+                m = REGISTER;
                 break;
             default: // ?
                 break;
@@ -120,18 +120,18 @@ static void free_resources(void) {
     if (munmap(shared, sizeof *shared) == -1) {
         error_exit("Couldn't unmap shared memory.");
     }
-    /* Remove shared memory object */
-    if (shm_unlink(SHM_NAME) == -1) {
-        error_exit("Couldn't remove shared memory.");
-    }
-    /* Close semaphor */
-    if (sem_close(sem_server) == -1) {
-        error_exit("Couldn't remove semaphor 1.");
-    }
-    /* Unlink semaphor */
-    if (sem_unlink(SEM1_NAME)) {
-        error_exit("Couldn't unlink sempaphor 1.");
-    }
+//    /* Remove shared memory object */
+//    if (shm_unlink(SHM_NAME) == -1) {
+//        error_exit("Couldn't remove shared memory.");
+//    }
+//    /* Close semaphor */
+//    if (sem_close(sem_server) == -1) {
+//        error_exit("Couldn't remove semaphor 1.");
+//    }
+//    /* Unlink semaphor */
+//    if (sem_unlink(SEM1_NAME)) {
+//        error_exit("Couldn't unlink sempaphor 1.");
+//    }
 }
 
 static void signal_handler(int sig) {
@@ -140,10 +140,11 @@ static void signal_handler(int sig) {
 }
 
 int main(int argc, char **argv) {
-    bool cmd_set = false;
+    bool logout = false;
     const int signals[] = {SIGINT, SIGTERM};
     struct sigaction s;
     sigset_t blocked_signals;
+    status response;
 
     progname = argv[0];
     /* Fill set with all signals */
@@ -170,71 +171,128 @@ int main(int argc, char **argv) {
     if ((shared = mmap(NULL, sizeof *shared, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0)) == MAP_FAILED) {
         error_exit("Couldn't create mapping.");
     }
-    /* Open Semaphores */
-    if ((sem_server = sem_open(SEM1_NAME, O_EXCL | O_TRUNC, PERMISSION, 1)) == SEM_FAILED) {
-        error_exit("Couldn't open semaphore. Is the server running?");
-    }
+//    /* Open Semaphores */
+//    if ((sem_server = sem_open(SEM1_NAME, O_EXCL | O_TRUNC, PERMISSION, 1)) == SEM_FAILED) {
+//        error_exit("Couldn't open semaphore. Is the server running?");
+//    }
 
+    DEBUG("Client running ...\n");
     /* Change mode */
     switch (m) {
-        case 0: // r
-//            shared->modus = REGISTER;
+        case REGISTER:
+            shared->modus = REGISTER;
+            /* reserve semaphor here */
+            strncpy(shared->username, argv[2], MAX_DATA);
+            strncpy(shared->password, argv[3], MAX_DATA);
+            shared->status = STATUS_NONE;
+            while (shared->status == STATUS_NONE) {
+                // wait
+            }
+            switch (shared->status) {
+                case REGISTER_SUCCESS:
+                    printf("Successfully registered a new user.\n");
+                    exit (EXIT_SUCCESS);
+                    break;
+                case REGISTER_FAILED:
+                    error_exit("Failed to register a new user. User exists in database.");
+                    break;
+                default:
+                    DEBUG("Unexpected status code:\n");
+                    print_shared(shared);
+                    assert(1==0);
+            }
+            /* release it here */
             break;
-        case 1: // l
-//            shared->modus = LOGIN;
+        case LOGIN:
+            while (!logout) {
+                printf("Commands:\n  1) write secret\n  2) read secret\n  3) logout\nPlease select a command (1-3):\n");
+                char buffer[MAX_DATA];
+                if (fgets(buffer, sizeof buffer, stdin) == NULL) {
+                    error_exit("fgets");
+                }
+                cmd command = (int) strtol(buffer, (char **)NULL, 10);
+                /* now switch between the commands */
+                switch (command) {
+                    case WRITE:
+                        DEBUG("Command is WRITE.\n");
+                        char buf[MAX_DATA];
+                        printf("Write secret here, commit with [RETURN]:\n");
+                        if (fgets(buf, sizeof buf, stdin) == NULL) {
+                            error_exit("fgets secret");
+                        }
+                        int len = strlen(buf);
+                        if (buf[len - 1] == '\n') {
+                            buf[len - 1] = '\0';
+                        }
+                        /* prepare shared memory */
+                        shared->modus = LOGIN;
+                        shared->command = WRITE;
+                        strncpy(shared->secret, buf, MAX_DATA);
+                        strncpy(shared->username, argv[2], MAX_DATA);
+                        strncpy(shared->password, argv[3], MAX_DATA);
+                        shared->status = STATUS_NONE;
+                        print_shared(shared);
+                        DEBUG("Waiting for server ...\n");
+                        while (shared->status == STATUS_NONE) {
+                            // wait
+                        }
+                        response = shared->status;
+                        /* release semaphore here */
+                        switch (response) {
+                            case WRITE_SECRET_SUCCESS:
+                                printf("Successfully wrote the secret.\n");
+                                break;
+                            case WRITE_SECRET_FAILED:
+                                error_exit("Failed to write the secret. User does not exist in database.");
+                                break;
+                            default:
+                                error_exit("Unknown response status code. %d", response);
+                                break;
+                        }
+                        break;
+                    case READ:
+                        DEBUG("Command is READ.\n");
+                        /* reserve semaphor here */
+                        shared->modus = LOGIN;
+                        shared->command = READ;
+                        strncpy(shared->username, argv[2], MAX_DATA);
+                        strncpy(shared->password, argv[3], MAX_DATA);
+                        strncpy(shared->secret, "", MAX_DATA);
+                        shared->status = STATUS_NONE;
+                        DEBUG("waiting for server to send secret ...\n");
+                        while(shared->status == STATUS_NONE) {
+                            // wait
+                        }
+                        response = shared->status;
+                        char secret[MAX_DATA];
+                        strncpy(secret, shared->secret, MAX_DATA);
+                        /* release semaphore here */
+                        switch (response) {
+                            case LOGIN_SUCCESS:
+                                printf("Success! Your secret is: %s\n", secret);
+                                break;
+                            case LOGIN_FAILED:
+                                error_exit("Nope. Invalid credentials.");
+                                break;
+                            default:
+                                assert(1==0);
+                                break;
+                        }
+                        break;
+                    case LOGOUT:
+                        DEBUG("Command is LOGOUT.\n");
+//                        shared->command = LOGOUT;
+                        logout = true;
+                        break;
+                    default:
+                        fprintf(stderr, "Invalid command. Please try again:\n");
+                        break;
+                }
+            }
             break;
         default:
             usage();
             break;
-    }
-
-    DEBUG("Client running ...\n");
-
-    printf("Commands:\n  1) write secret\n  2) read secret\n  3) logout\nPlease select a command (1-3):\n");
-
-    while (!cmd_set) {
-        char buffer[MAX_DATA];
-        if (fgets(buffer, sizeof buffer, stdin) == NULL) {
-            error_exit("fgets");
-        }
-        cmd command = (int) strtol(buffer, (char **)NULL, 10);
-        /* now switch between the commands */
-        switch (command) {
-            case WRITE:
-                DEBUG("Command is WRITE.\n");
-//                shared->command = WRITE;
-                cmd_set = true;
-                break;
-            case READ:
-                DEBUG("Command is READ.\n");
-//                shared->command = READ;
-//                shared->status = STATUS_NONE;
-//                status response;
-//                while (shared->status == STATUS_NONE) {
-//                    response = shared->status;
-//                }
-//                switch (response) {
-//                    case LOGIN_SUCCESS:
-//                        printf("Success! Your secret is: %s\n", shared->secret);
-//                        break;
-//                    case LOGIN_FAILED:
-//                        error_exit("Nope. Invalid credentials.");
-//                        break;
-//                    default:
-//                        assert(1==0);
-//                        break;
-//                }
-                cmd_set = true;
-                break;
-            case LOGOUT:
-                DEBUG("Command is LOGOUT.\n");
-//                shared->command = LOGOUT;
-                cmd_set = true;
-                break;
-            default:
-                fprintf(stderr, "Invalid command. Please try again:\n");
-                break;
-        }
     }
 //    shared->status = STATUS_NONE;
 }

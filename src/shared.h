@@ -2,7 +2,7 @@
 /* === Constants === */
 
 #define SHM_NAME "/1429167fragment"
-#define PERMISSION (0600)
+#define PERMISSION (0660)
 #define MAX_DATA (100)
 
 #define SEM1_NAME "/1429167sem1"
@@ -18,8 +18,8 @@ typedef enum {
 } mode;
 
 typedef enum {
-    STATUS_NONE, LOGIN_SUCCESS, LOGIN_FAILED, REGISTER_SUCCESS,
-    REGISTER_FAILED, WRITE_SECRET_SUCCESS, WRITE_SECRET_FAILED
+    STATUS_NONE, LOGIN_SUCCESS, LOGIN_FAILED, REGISTER_SUCCESS, LOGOUT_SUCCESS,
+    LOGOUT_FAILED, REGISTER_FAILED, WRITE_SECRET_SUCCESS, WRITE_SECRET_FAILED
 } status;
 
 /* === Structs === */
@@ -57,3 +57,5 @@ struct shared_command {
 #endif
 
 /* === Prototypes === */
+
+void print_shared(struct shared_command *ptr);

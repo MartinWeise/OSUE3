@@ -39,4 +39,29 @@ struct shared_command *shared = NULL;
 
 char *progname;
 
+static const char *STATUS_STRING[] = {
+    "STATUS_NONE", "LOGIN_SUCCESS", "LOGIN_FAILED", "REGISTER_SUCCESS", "LOGOUT_SUCCESS",
+    "LOGOUT_FAILED", "REGISTER_FAILED", "WRITE_SECRET_SUCCESS", "WRITE_SECRET_FAILED",
+};
+
+static const char *MODE_STRING[] = {
+    "MODE_UNSET", "REGISTER", "LOGIN",
+};
+
+static const char *CMD_STRING[] = {
+    "COMMAND_NONE", "WRITE", "READ", "LOGOUT",
+};
 /* === Implementations === */
+
+void print_shared(struct shared_command *ptr) {
+    DEBUG("shared = {\n"                        \
+        "    status: %s,\n"                     \
+        "    modus: %s,\n"                      \
+        "    command: %s,\n"                    \
+        "    id: %d,\n"                         \
+        "    username: '%s',\n"                 \
+        "    password: '%s',\n"                 \
+        "    secret: '%s'\n"                    \
+        "}\n", STATUS_STRING[ptr->status], MODE_STRING[ptr->modus], CMD_STRING[ptr->command],
+          1, ptr->username, ptr->password, ptr->secret);
+}

@@ -44,6 +44,9 @@ static void usage(void);
 static int parse_args(int argc, char **argv);
 static void parse_database(void);
 static void save(void);
+static int prepend(struct shared_command *update);
+static struct entry *search(struct shared_command *update);
+static int update_secret(struct shared_command *update);
 
 /* === Global Variables === */
 
@@ -135,9 +138,10 @@ static void save(void) {
     if ((db = fopen("auth-server.db.csv", "w+")) == NULL) {
         error_exit("Couldn't open the database file.");
     }
-    DEBUG("Saving to auth-server.db.csv.\n");
+    DEBUG("\nSaving to auth-server.db.csv.\n");
     while (ptr != NULL) {
         fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
+        DEBUG("> %s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
         ptr = ptr->next;
     }
 }
@@ -172,6 +176,8 @@ static void free_resources(void) {
     if (shmfd != -1) {
         (void) close (shmfd);
     }
+    /* save database */
+    save();
     /* Free all space from linked list */
     while (first != NULL) {
         temp = first;
@@ -186,16 +192,14 @@ static void free_resources(void) {
     if (shm_unlink(SHM_NAME) == -1) {
         error_exit("Couldn't remove shared memory.");
     }
-    /* Close semaphor */
-    if (sem_close(sem_server) == -1) {
-        error_exit("Couldn't remove semaphor 1.");
-    }
-    /* Unlink semaphor */
-    if (sem_unlink(SEM1_NAME)) {
-        error_exit("Couldn't unlink sempaphor 1.");
-    }
-    /* save */
-    save();
+//    /* Close semaphor */
+//    if (sem_close(sem_server) == -1) {
+//        error_exit("Couldn't remove semaphor 1.");
+//    }
+//    /* Unlink semaphor */
+//    if (sem_unlink(SEM1_NAME)) {
+//        error_exit("Couldn't unlink sempaphor 1.");
+//    }
 }
 
 static void signal_handler(int sig) {
@@ -203,10 +207,58 @@ static void signal_handler(int sig) {
     exit (EXIT_SUCCESS);
 }
 
+static int update_secret(struct shared_command *update) {
+    struct entry *tmp = first;
+    print_shared(update);
+    while (1) {
+        if (tmp != NULL) {
+            if (strcmp(tmp->username, update->username) == 0
+                && strcmp(tmp->password, update->password) == 0) {
+                /* registered user found */
+                strncpy(tmp->secret, update->secret, MAX_DATA);
+                return 1;
+            }
+            tmp = tmp->next;
+            continue;
+        }
+        return -1;
+    }
+}
+
+static int prepend(struct shared_command *update) {
+    if (search(update) != NULL) {
+        return -1;
+    }
+    struct entry *tmp = malloc(sizeof(struct entry));
+    strncpy(tmp->username, update->username, MAX_DATA);
+    strncpy(tmp->password, update->password, MAX_DATA);
+    strncpy(tmp->secret, update->secret, MAX_DATA);
+    tmp->next = first;
+    first = tmp;
+    return 1;
+}
+
+static struct entry *search(struct shared_command *update) {
+    struct entry *tmp = first;
+    while (1) {
+        if (tmp != NULL) {
+            if (strcmp(update->username, tmp->username) == 0 && strcmp(update->password, tmp->password) == 0) {
+                /* registered user found */
+                return tmp;
+            }
+            tmp = tmp->next;
+            continue;
+        }
+        free (tmp);
+        return NULL;
+    }
+}
+
 int main(int argc, char **argv) {
     const int signals[] = {SIGINT, SIGTERM};
     struct sigaction s;
     sigset_t blocked_signals;
+    struct entry *tmp;
 
     progname = argv[0];
     /* Fill set with all signals */
@@ -243,31 +295,55 @@ int main(int argc, char **argv) {
     if (shared == (struct shared_command*) -1) {
         error_exit("mmap did not init a shared_command.");
     }
-    strncpy(shared->username,"hello", MAX_DATA);
-    /* Create Semaphores */
-    if ((sem_server = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
-        error_exit("Couldn't create semaphore.");
-    }
+//    /* Create Semaphores */
+//    if ((sem_server = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+//        error_exit("Couldn't create semaphore.");
+//    }
     DEBUG("Server running ...\n");
-    while(1) {
+    while (1) {
+        /* reserve semaphor here */
         switch (shared->modus) {
-            case REGISTER:
-                break;
             case LOGIN:
                 switch (shared->command) {
                     case WRITE:
-//                        DEBUG("Login => WRITE\n");
+                        if (update_secret(shared) == -1) {
+                            shared->status = WRITE_SECRET_FAILED;
+                        } else {
+                            shared->status = WRITE_SECRET_SUCCESS;
+                        }
+                        /* reset */
+                        shared->modus = MODE_UNSET;
+                        shared->command = COMMAND_NONE;
+                        /* release semaphor here */
                         break;
                     case READ:
-//                        DEBUG("Login => READ\n");
-                        shared->status = LOGIN_SUCCESS;
-                        break;
-                    case LOGOUT:
-//                        DEBUG("Login => LOGOUT\n");
+                        /* reserve semaphore here */
+                        if ((tmp = search(shared)) == NULL) {
+                            shared->status = LOGIN_FAILED;
+                        } else {
+                            strncpy(shared->secret, tmp->secret, MAX_DATA);
+                            shared->status = LOGIN_SUCCESS;
+                        }
+                        /* reset */
+                        shared->modus = MODE_UNSET;
+                        shared->command = COMMAND_NONE;
+                        /* release semaphor here */
                         break;
                     default:
                         break;
                 }
+                break;
+            case REGISTER:
+                /* reserve semaphor here */
+                if (prepend(shared) == -1) {
+                    shared->status = REGISTER_FAILED;
+                } else {
+                    shared->status = REGISTER_SUCCESS;
+                }
+                shared->modus = MODE_UNSET;
+                shared->command = COMMAND_NONE;
+                print_shared(shared);
+                /* release semaphor here */
                 break;
             default:
                 break;
