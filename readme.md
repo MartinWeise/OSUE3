@@ -2,4 +2,5 @@
 
 ### TODO
 
-- [ ] `LOGIN` & `READ`: Sometimes hang up
+- [x] `LOGIN` & `READ`: Sometimes hang up
+- [ [ Semaphor stuff

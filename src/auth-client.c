@@ -231,7 +231,6 @@ int main(int argc, char **argv) {
                         strncpy(shared->username, argv[2], MAX_DATA);
                         strncpy(shared->password, argv[3], MAX_DATA);
                         shared->status = STATUS_NONE;
-                        print_shared(shared);
                         DEBUG("Waiting for server ...\n");
                         while (shared->status == STATUS_NONE) {
                             // wait
@@ -257,7 +256,6 @@ int main(int argc, char **argv) {
                         shared->command = READ;
                         strncpy(shared->username, argv[2], MAX_DATA);
                         strncpy(shared->password, argv[3], MAX_DATA);
-                        strncpy(shared->secret, "", MAX_DATA);
                         shared->status = STATUS_NONE;
                         DEBUG("waiting for server to send secret ...\n");
                         while(shared->status == STATUS_NONE) {
