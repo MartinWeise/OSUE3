@@ -31,9 +31,12 @@ struct entry *first = NULL;
 
 int shmfd = -1;
 
-sem_t *sem_client;
-
-sem_t *sem_server;
+/** Shared memory semaphor */
+sem_t *sem1;
+/** Next action semaphor */
+sem_t *sem2;
+/** TODO */
+sem_t *sem3;
 
 struct shared_command *shared = NULL;
 

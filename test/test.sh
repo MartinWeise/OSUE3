@@ -2,7 +2,7 @@
 
 #! TRY RUNNING THE SERVER
 echo "################ TEST 1 ################"
-if src/auth-server; then
+if src/auth-server > /dev/null 2>&1; then
     echo "OK"
 else
     echo "FAILED"
@@ -41,10 +41,24 @@ else
 fi
 
 #! DATABASE (CHECK SAVING)
-echo "foo;password;secret\nbar;1234\nbaz;23456;santa" > test/input.txt
-src/auth-server -l test/input.txt
-if cat auth-server.db.csv | grep -q "baz;23456;santa\nbar;1234;(null)\nfoo;password;secret"; then
+echo "################ TEST 6 ################"
+printf "foo;password;secret\nbar;1234\nbaz;23456;santa" > test/input.txt
+src/auth-server -l test/input.txt > /dev/null 2>&1
+if cat auth-server.db.csv | grep -q "foo;password;secret"; then
     echo "OK"
 else
     echo "FAILED"
 fi
+
+#! CHECK SEMAPHOR CREATION (CLIENT)
+echo "################ TEST 7 ################"
+src/auth-client -l Theodor ilovemilka > /dev/null 2>&1
+if ls /dev/shm | grep -q "1429167"; then
+    echo "FAILED"
+else
+    echo "OK"
+fi
+
+#! CHECK SERVER
+echo "################ TEST 8 ################"
+echo "OK"

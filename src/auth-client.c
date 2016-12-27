@@ -32,7 +32,9 @@
 /* === Global Variables === */
 
 extern sig_atomic_t terminating;
-extern sem_t *sem_server;
+extern sem_t *sem1;
+extern sem_t *sem2;
+extern sem_t *sem3;
 
 char *progname;
 static int shmfd;
@@ -120,18 +122,16 @@ static void free_resources(void) {
     if (munmap(shared, sizeof *shared) == -1) {
         error_exit("Couldn't unmap shared memory.");
     }
-//    /* Remove shared memory object */
-//    if (shm_unlink(SHM_NAME) == -1) {
-//        error_exit("Couldn't remove shared memory.");
-//    }
-//    /* Close semaphor */
-//    if (sem_close(sem_server) == -1) {
-//        error_exit("Couldn't remove semaphor 1.");
-//    }
-//    /* Unlink semaphor */
-//    if (sem_unlink(SEM1_NAME)) {
-//        error_exit("Couldn't unlink sempaphor 1.");
-//    }
+    /* Close semaphor */
+    if (sem_close(sem1) == -1) {
+        error_exit("Couldn't remove semaphor 1.");
+    }
+    if (sem_close(sem2) == -1) {
+        error_exit("Couldn't remove semaphor 2.");
+    }
+    if (sem_close(sem3) == -1) {
+        error_exit("Couldn't remove semaphor 3.");
+    }
 }
 
 static void signal_handler(int sig) {
@@ -171,17 +171,25 @@ int main(int argc, char **argv) {
     if ((shared = mmap(NULL, sizeof *shared, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0)) == MAP_FAILED) {
         error_exit("Couldn't create mapping.");
     }
-//    /* Open Semaphores */
-//    if ((sem_server = sem_open(SEM1_NAME, O_EXCL | O_TRUNC, PERMISSION, 1)) == SEM_FAILED) {
-//        error_exit("Couldn't open semaphore. Is the server running?");
-//    }
+    /* Create Semaphores */
+    if ((sem1 = sem_open(SEM1_NAME, O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+        error_exit("Couldn't create semaphore 1.");
+    }
+    if ((sem2 = sem_open(SEM2_NAME, O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+        error_exit("Couldn't create semaphore 2.");
+    }
+    if ((sem3 = sem_open(SEM3_NAME, O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+        error_exit("Couldn't create semaphore 3.");
+    }
 
     DEBUG("Client running ...\n");
     /* Change mode */
     switch (m) {
         case REGISTER:
-            shared->modus = REGISTER;
             /* reserve semaphor here */
+
+            sem_wait(sem2);
+            shared->modus = REGISTER;
             strncpy(shared->username, argv[2], MAX_DATA);
             strncpy(shared->password, argv[3], MAX_DATA);
             shared->status = STATUS_NONE;
@@ -202,6 +210,7 @@ int main(int argc, char **argv) {
                     assert(1==0);
             }
             /* release it here */
+            sem_post(sem2);
             break;
         case LOGIN:
             while (!logout) {
@@ -224,7 +233,9 @@ int main(int argc, char **argv) {
                         if (buf[len - 1] == '\n') {
                             buf[len - 1] = '\0';
                         }
-                        /* prepare shared memory */
+                        /* reserve semaphor here */
+                        sem_wait(sem2);
+                        sleep(10);
                         shared->modus = LOGIN;
                         shared->command = WRITE;
                         strncpy(shared->secret, buf, MAX_DATA);
@@ -237,6 +248,7 @@ int main(int argc, char **argv) {
                         }
                         response = shared->status;
                         /* release semaphore here */
+                        sem_post(sem2);
                         switch (response) {
                             case WRITE_SECRET_SUCCESS:
                                 printf("Successfully wrote the secret.\n");
@@ -252,6 +264,7 @@ int main(int argc, char **argv) {
                     case READ:
                         DEBUG("Command is READ.\n");
                         /* reserve semaphor here */
+                        sem_wait(sem2);
                         shared->modus = LOGIN;
                         shared->command = READ;
                         strncpy(shared->username, argv[2], MAX_DATA);
@@ -265,6 +278,7 @@ int main(int argc, char **argv) {
                         char secret[MAX_DATA];
                         strncpy(secret, shared->secret, MAX_DATA);
                         /* release semaphore here */
+                        sem_post(sem2);
                         switch (response) {
                             case LOGIN_SUCCESS:
                                 printf("Success! Your secret is: %s\n", secret);

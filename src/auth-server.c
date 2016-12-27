@@ -52,7 +52,9 @@ static int update_secret(struct shared_command *update);
 
 extern int shmfd;
 extern sig_atomic_t terminating;
-extern sem_t *sem_server;
+extern sem_t *sem1;
+extern sem_t *sem2;
+extern sem_t *sem3;
 
 static struct entry *first;
 static char *progname;
@@ -192,14 +194,26 @@ static void free_resources(void) {
     if (shm_unlink(SHM_NAME) == -1) {
         error_exit("Couldn't remove shared memory.");
     }
-//    /* Close semaphor */
-//    if (sem_close(sem_server) == -1) {
-//        error_exit("Couldn't remove semaphor 1.");
-//    }
-//    /* Unlink semaphor */
-//    if (sem_unlink(SEM1_NAME)) {
-//        error_exit("Couldn't unlink sempaphor 1.");
-//    }
+    /* Close semaphor */
+    if (sem_close(sem1) == -1) {
+        error_exit("Couldn't remove semaphor 1.");
+    }
+    if (sem_close(sem2) == -1) {
+        error_exit("Couldn't remove semaphor 2.");
+    }
+    if (sem_close(sem3) == -1) {
+        error_exit("Couldn't remove semaphor 3.");
+    }
+    /* Unlink semaphor */
+    if (sem_unlink(SEM1_NAME)) {
+        error_exit("Couldn't unlink sempaphor 1.");
+    }
+    if (sem_unlink(SEM2_NAME)) {
+        error_exit("Couldn't unlink sempaphor 2.");
+    }
+    if (sem_unlink(SEM3_NAME)) {
+        error_exit("Couldn't unlink sempaphor 3.");
+    }
 }
 
 static void signal_handler(int sig) {
@@ -295,13 +309,21 @@ int main(int argc, char **argv) {
     if (shared == (struct shared_command*) -1) {
         error_exit("mmap did not init a shared_command.");
     }
-//    /* Create Semaphores */
-//    if ((sem_server = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
-//        error_exit("Couldn't create semaphore.");
-//    }
+    /* Create Semaphores */
+    if ((sem1 = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+        error_exit("Couldn't create semaphore 1.");
+    }
+    if ((sem2 = sem_open(SEM2_NAME, O_CREAT | O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
+        error_exit("Couldn't create semaphore 2.");
+    }
+    if ((sem3 = sem_open(SEM3_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+        error_exit("Couldn't create semaphore 3.");
+    }
     DEBUG("Server running ...\n");
     while (1) {
         /* reserve semaphor here */
+        sem_wait(sem1);
+        sem_post(sem2);
         switch (shared->modus) {
             case LOGIN:
                 switch (shared->command) {
@@ -314,10 +336,8 @@ int main(int argc, char **argv) {
                         /* reset */
                         shared->modus = MODE_UNSET;
                         shared->command = COMMAND_NONE;
-                        /* release semaphor here */
                         break;
                     case READ:
-                        /* reserve semaphore here */
                         if ((tmp = search(shared)) == NULL) {
                             shared->status = LOGIN_FAILED;
                         } else {
@@ -327,7 +347,6 @@ int main(int argc, char **argv) {
                         /* reset */
                         shared->modus = MODE_UNSET;
                         shared->command = COMMAND_NONE;
-                        /* release semaphor here */
                         break;
                     default:
                         break;
@@ -348,6 +367,8 @@ int main(int argc, char **argv) {
             default:
                 break;
         }
+        sem_post(sem1);
+        sem_wait(sem2);
     }
     return EXIT_SUCCESS;
 }

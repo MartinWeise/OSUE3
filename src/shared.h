@@ -6,6 +6,8 @@
 #define MAX_DATA (100)
 
 #define SEM1_NAME "/1429167sem1"
+#define SEM2_NAME "/1429167sem2"
+#define SEM3_NAME "/1429167sem3"
 
 /* === Enums === */
 
