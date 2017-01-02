@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <fcntl.h>
+#include <time.h>
 #include <semaphore.h>
 #include <sys/time.h>
 #include "shared.h"
@@ -47,6 +48,7 @@ static void save(void);
 static int prepend(struct shared_command *update);
 static struct entry *search(struct shared_command *update);
 static int update_secret(struct shared_command *update);
+static char *rdm_id(void);
 
 /* === Global Variables === */
 
@@ -71,6 +73,9 @@ static void usage(void) {
 static int parse_args(int argc, char **argv) {
     int flag_l = -1;
     char opt;
+    if (argc == 1) {
+        return 1;
+    }
     if (argc > 3 || argc == 2) {
         return -1;
     }
@@ -268,6 +273,15 @@ static struct entry *search(struct shared_command *update) {
     }
 }
 
+static char *rdm_id(void) {
+    char *s = malloc(MAX_DATA);
+    srand(time(NULL));
+    for(int i = 0; i < MAX_DATA; i++) {
+        s[i] = '0' + rand()%72;
+    }
+    return s;
+}
+
 int main(int argc, char **argv) {
     const int signals[] = {SIGINT, SIGTERM};
     struct sigaction s;
@@ -287,7 +301,6 @@ int main(int argc, char **argv) {
             error_exit("Changing of signal failed.");
         }
     }
-
     if (parse_args(argc, argv) == -1) {
         usage();
     }
@@ -310,7 +323,7 @@ int main(int argc, char **argv) {
         error_exit("mmap did not init a shared_command.");
     }
     /* Create Semaphores */
-    if ((sem1 = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+    if ((sem1 = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore 1.");
     }
     if ((sem2 = sem_open(SEM2_NAME, O_CREAT | O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
@@ -322,8 +335,8 @@ int main(int argc, char **argv) {
     DEBUG("Server running ...\n");
     while (1) {
         /* reserve semaphor here */
-        sem_wait(sem1);
-        sem_post(sem2);
+//        sem_post(sem2);
+//        sem_wait(sem1);
         switch (shared->modus) {
             case LOGIN:
                 switch (shared->command) {
@@ -342,6 +355,7 @@ int main(int argc, char **argv) {
                             shared->status = LOGIN_FAILED;
                         } else {
                             strncpy(shared->secret, tmp->secret, MAX_DATA);
+                            strncpy(shared->id, rdm_id(), MAX_DATA);
                             shared->status = LOGIN_SUCCESS;
                         }
                         /* reset */
@@ -367,8 +381,8 @@ int main(int argc, char **argv) {
             default:
                 break;
         }
-        sem_post(sem1);
-        sem_wait(sem2);
+//        sem_post(sem1);
+//        sem_wait(sem2);
     }
     return EXIT_SUCCESS;
 }

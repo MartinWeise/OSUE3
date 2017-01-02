@@ -40,7 +40,7 @@ struct shared_command {
     status status;
     mode modus;
     cmd command;
-    suseconds_t  id;
+    char id[MAX_DATA];
     char username[MAX_DATA];
     char password[MAX_DATA];
     char secret[MAX_DATA];

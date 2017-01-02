@@ -37,6 +37,8 @@ extern sem_t *sem2;
 extern sem_t *sem3;
 
 char *progname;
+char *username;
+char *password;
 static int shmfd;
 static struct shared_command *shared;
 
@@ -59,12 +61,15 @@ static void usage() {
 static void parse_args(int argc, char **argv) {
     int flag_l = -1;
     int flag_r = -1;
+    int flag_d = -1;
     char opt;
     progname = argv[0];
     if (argc != 4 || optind != 1) {
         usage();
     }
-    while ((opt = getopt (argc, argv, "r:l:")) != -1) {
+    username = argv[2];
+    password = argv[3];
+    while ((opt = getopt (argc, argv, "r:l:")) != -1 && flag_d == -1) {
         switch (opt) {
             case 'l':
                 if (flag_l != -1 || optarg == NULL) {
@@ -81,6 +86,7 @@ static void parse_args(int argc, char **argv) {
                 m = REGISTER;
                 break;
             default: // ?
+                flag_d = 1;
                 break;
         }
     }
@@ -172,10 +178,10 @@ int main(int argc, char **argv) {
         error_exit("Couldn't create mapping.");
     }
     /* Create Semaphores */
-    if ((sem1 = sem_open(SEM1_NAME, O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+    if ((sem1 = sem_open(SEM1_NAME, O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore 1.");
     }
-    if ((sem2 = sem_open(SEM2_NAME, O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+    if ((sem2 = sem_open(SEM2_NAME, O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore 2.");
     }
     if ((sem3 = sem_open(SEM3_NAME, O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
@@ -187,8 +193,7 @@ int main(int argc, char **argv) {
     switch (m) {
         case REGISTER:
             /* reserve semaphor here */
-
-            sem_wait(sem2);
+//            sem_wait(sem2);
             shared->modus = REGISTER;
             strncpy(shared->username, argv[2], MAX_DATA);
             strncpy(shared->password, argv[3], MAX_DATA);
@@ -210,7 +215,7 @@ int main(int argc, char **argv) {
                     assert(1==0);
             }
             /* release it here */
-            sem_post(sem2);
+//            sem_post(sem2);
             break;
         case LOGIN:
             while (!logout) {
@@ -234,7 +239,7 @@ int main(int argc, char **argv) {
                             buf[len - 1] = '\0';
                         }
                         /* reserve semaphor here */
-                        sem_wait(sem2);
+//                        sem_wait(sem2);
                         sleep(10);
                         shared->modus = LOGIN;
                         shared->command = WRITE;
@@ -248,7 +253,7 @@ int main(int argc, char **argv) {
                         }
                         response = shared->status;
                         /* release semaphore here */
-                        sem_post(sem2);
+//                        sem_post(sem2);
                         switch (response) {
                             case WRITE_SECRET_SUCCESS:
                                 printf("Successfully wrote the secret.\n");
@@ -264,7 +269,7 @@ int main(int argc, char **argv) {
                     case READ:
                         DEBUG("Command is READ.\n");
                         /* reserve semaphor here */
-                        sem_wait(sem2);
+//                        sem_wait(sem2);
                         shared->modus = LOGIN;
                         shared->command = READ;
                         strncpy(shared->username, argv[2], MAX_DATA);
@@ -278,7 +283,7 @@ int main(int argc, char **argv) {
                         char secret[MAX_DATA];
                         strncpy(secret, shared->secret, MAX_DATA);
                         /* release semaphore here */
-                        sem_post(sem2);
+//                        sem_post(sem2);
                         switch (response) {
                             case LOGIN_SUCCESS:
                                 printf("Success! Your secret is: %s\n", secret);
@@ -306,5 +311,5 @@ int main(int argc, char **argv) {
             usage();
             break;
     }
-//    shared->status = STATUS_NONE;
+    shared->status = STATUS_NONE;
 }
