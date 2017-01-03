@@ -193,6 +193,7 @@ static void save(void) {
     }
     DEBUG("\nSaving to auth-server.db.csv.\n");
     while (ptr != NULL) {
+        // TODO Trimming
         fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
         DEBUG("> %s;%s;%s;sessid=%s\n", ptr->username, ptr->password, ptr->secret, ptr->session_id);
         ptr = ptr->next;

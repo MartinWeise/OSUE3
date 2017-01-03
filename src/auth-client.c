@@ -349,6 +349,7 @@ int main(int argc, char **argv) {
                                 }
                                 break;
                             case LOGOUT:
+                                // TODO: logout destroys the session id
                                 DEBUG("Command is LOGOUT.\n");
                                 /* tell server to wait for a new request */
                                 logout = true;
