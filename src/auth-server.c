@@ -1,7 +1,7 @@
 /**
  * @file auth-server.c
  * @author Martin Weise <e1429167@student.tuwien.ac.at>
- * @date 28.11.2016
+ * @date 03.01.2017
  *
  * @brief Main program module.
  *
@@ -24,44 +24,89 @@
 #include <sys/time.h>
 #include "shared.h"
 
-/* === Macros === */
-
-/**
- * @brief Provides a debugging function to output status messages
- * @details Activate/Deactivate by adding/removing -DENDEBUG to DEFS in Makefile.
- */
-#if defined(ENDEBUG)
-#define DEBUG(...) do { fprintf(stderr, __VA_ARGS__); } while(0)
-#else
-#define DEBUG(...)
-#endif
-
 /* === Prototypes === */
-
+/**
+ * @brief Method to handle certain signals.
+ * @details Is invoked on SIGINT and SIGTERM.
+ * @param sig
+ */
 static void signal_handler(int sig);
+/**
+ * @brief Exists the program with a given message.
+ * @param fmt Formatted string for parsing the latter arguments to.
+ */
 static void error_exit (const char *fmt, ...);
+/**
+ * @brief Frees the used resources.
+ * @details This method is also invoked when the signals SIGINT and SIGTERM occur.
+ */
 static void free_resources(void);
+/**
+ * @brief Prints a nice usage message.
+ */
 static void usage(void);
+/**
+ * @brief Set the operation mode (register | login) and verify only one mode is given.
+ * @param argc The argument counter.
+ * @param argv The argument vector.
+ */
 static int parse_args(int argc, char **argv);
+/**
+ * @brief Reads data from the specified csv file and add it to the linked lsit.
+ * @details The database must contain not more than 3 columns.
+ */
 static void parse_database(void);
+/**
+ * @brief Saves the linked list database to the file ./auth-server.db.csv
+ */
 static void save(void);
+/**
+ * @brief Add an entry to the linked list database.
+ * @param update The new entry.
+ * @return 1 on success, -1 on error.
+ */
 static int prepend(struct shared_command *update);
+/**
+ * @brief Traverse the linked list database for a given entry.
+ * @param update The entry that should be found.
+ * @details Only compares username and password. Other attributes are ignored.
+ * @return The user entry on success, NULL otherwise.
+ */
 static struct entry *search(struct shared_command *update);
-static int update_secret(struct shared_command *update);
+/**
+ * @brief Generate a random id containing alphanumeric characters.
+ * @details Length is always 20.
+ * @return The generated id.
+ */
 static char *rdm_id(void);
-static int set_id(struct entry *update);
+/**
+ * @brief The program entry point.
+ * @param argc The argument vector.
+ * @param argv The argument counter.
+ * @return EXIT_SUCCESS on succesful program execution, EXIT_FAILURE otherwise.
+ */
+int main(int argc, char **argv);
 
 /* === Global Variables === */
 
-extern int shmfd;
-extern sig_atomic_t terminating;
+/** @brief The shared memory file descriptor */
+static int shmfd;
+/** @brief Used to terminate the client only once. */
+static sig_atomic_t terminating;
+/** @brief Semaphor to allow client the initial request. @details Is a binary semaphor. */
 extern sem_t *sem1;
+/** @brief Semaphor to allow client further commands when logged in. @details Is a binary semaphor. */
 extern sem_t *sem2;
+/** @brief Semaphor to sync waiting for response from server. @details Is a binary semaphor. */
 extern sem_t *sem3;
-
+/** @brief Stores the user in a linked list */
 static struct entry *first;
+/** @brief Holds the program name. */
 static char *progname;
+/** @brief Holds the database name. @details If specified in the argument vector, the value should
+ *         equal a filename in csv format */
 static char *dbname = NULL;
+/** @brief The shared fragment between server and client */
 static struct shared_command *shared = NULL;
 
 /* === Implementations === */
@@ -93,7 +138,7 @@ static int parse_args(int argc, char **argv) {
                 DEBUG("Database is %s.\n", dbname);
                 flag_l = 1;
                 break;
-            default: // ?
+            default:
                 break;
         }
     }
@@ -149,7 +194,7 @@ static void save(void) {
     DEBUG("\nSaving to auth-server.db.csv.\n");
     while (ptr != NULL) {
         fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
-        DEBUG("> %s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
+        DEBUG("> %s;%s;%s;sessid=%s\n", ptr->username, ptr->password, ptr->secret, ptr->session_id);
         ptr = ptr->next;
     }
 }
@@ -227,40 +272,6 @@ static void signal_handler(int sig) {
     exit (EXIT_SUCCESS);
 }
 
-static int update_secret(struct shared_command *update) {
-    struct entry *tmp = first;
-    while (1) {
-        if (tmp != NULL) {
-            if (strcmp(tmp->username, update->username) == 0
-                && strcmp(tmp->password, update->password) == 0) {
-                /* registered user found */
-                strncpy(tmp->secret, update->secret, MAX_DATA);
-                return 1;
-            }
-            tmp = tmp->next;
-            continue;
-        }
-        return -1;
-    }
-}
-
-static int set_id(struct entry *update) {
-    struct entry *tmp = first;
-    while (1) {
-        if (tmp != NULL) {
-            if (strcmp(tmp->username, update->username) == 0
-                && strcmp(tmp->password, update->password) == 0) {
-                /* registered user found */
-                strncpy(tmp->session_id, update->session_id, MAX_DATA);
-                return 1;
-            }
-            tmp = tmp->next;
-            continue;
-        }
-        return -1;
-    }
-}
-
 static int prepend(struct shared_command *update) {
     if (search(update) != NULL) {
         return -1;
@@ -291,10 +302,11 @@ static struct entry *search(struct shared_command *update) {
 }
 
 static char *rdm_id(void) {
-    char *s = malloc(MAX_DATA);
+    char *s = malloc(20);
+    char *chars = "AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789";
     srand(time(NULL));
-    for(int i = 0; i < MAX_DATA; i++) {
-        s[i] = '0' + rand()%72;
+    for(int i = 0; i < 20; i++) {
+        s[i] = chars[rand() % strlen(chars)];
     }
     return s;
 }
@@ -355,64 +367,54 @@ int main(int argc, char **argv) {
         sem_post(sem1);
         /* wait for request */
         sem_wait(sem2);
-        debug_info(shared);
-        if (strlen(shared->session_id) > 0) {
-            if ((tmp = search(shared)) == NULL) {
-                shared->status = LOGIN_FAILED;
-                sem_post(sem3);
-                continue;
-            } else if (strcmp(tmp->session_id, shared->session_id) != 0) {
-                shared->status = SESSION_FAILED;
-                sem_post(sem3);
-                continue;
-            }
-        }
-        sem_post(sem3);
         switch (shared->modus) {
             case LOGIN:
-//                switch (shared->command) {
-//                    case WRITE:
-//                        if (update_secret(shared) == -1) {
-//                            shared->status = WRITE_SECRET_FAILED;
-//                        } else {
-//                            shared->status = WRITE_SECRET_SUCCESS;
-//                        }
-//                        break;
-//                    case READ:
-//                        if ((tmp = search(shared)) == NULL) {
-//                            shared->status = LOGIN_FAILED;
-//                        } else {
-//                            strncpy(shared->secret, tmp->secret, MAX_DATA);
-//                            shared->status = LOGIN_SUCCESS;
-//                        }
-//                        break;
+                switch (shared->command) {
+                    case WRITE:
+                        if ((tmp = search(shared)) == NULL) {
+                            shared->status = WRITE_SECRET_FAILED;
+                        } else if (strcmp(tmp->session_id, shared->session_id) == 0) {
+                            strncpy(tmp->secret, shared->secret, MAX_DATA);
+                            shared->status = WRITE_SECRET_SUCCESS;
+                        } else {
+                            shared->status = SESSION_FAILED;
+                        }
+                        break;
+                    case READ:
+                        if ((tmp = search(shared)) == NULL) {
+                            shared->status = LOGIN_FAILED;
+                        } else if (strcmp(tmp->session_id, shared->session_id) == 0) {
+                            strncpy(shared->secret, tmp->secret, MAX_DATA);
+                            shared->status = LOGIN_SUCCESS;
+                        } else {
+                            shared->status = SESSION_FAILED;
+                        }
+                        break;
                     default:
                         if ((tmp = search(shared)) == NULL) {
                             shared->status = LOGIN_FAILED;
                         } else {
                             char *id = rdm_id();
                             strncpy(tmp->session_id, id, MAX_DATA);
-                            set_id(tmp);
-                            strncpy(shared->session_id, id, MAX_DATA); // TODO: username at end of random sequence?
+                            strncpy(shared->session_id, id, MAX_DATA);
                             shared->status = LOGIN_SUCCESS;
                         }
                         break;
                 }
-//                /* tell client to continue */
-//                sem_post(sem3);
-//                break;
-//            case REGISTER:
-//                if (prepend(shared) == -1) {
-//                    shared->status = REGISTER_FAILED;
-//                } else {
-//                    shared->status = REGISTER_SUCCESS;
-//                }
-//                /* tell client to continue */
-//                sem_post(sem3);
-//                break;
-//            default:
-//                break;
-//        }
-        
+                /* tell client to continue */
+                sem_post(sem3);
+                break;
+            case REGISTER:
+                if (prepend(shared) == -1) {
+                    shared->status = REGISTER_FAILED;
+                } else {
+                    shared->status = REGISTER_SUCCESS;
+                }
+                /* tell client to continue */
+                sem_post(sem3);
+                break;
+            default:
+                break;
+        }
     }
 }

@@ -9,3 +9,5 @@ src/client.dSYM/
 src/auth-client
 src/auth-server
 cmake-build-debug/
+doc/html/
+doc/latex/

@@ -1,7 +1,7 @@
 /**
  * @file auth-client.c
  * @author Martin Weise <e1429167@student.tuwien.ac.at>
- * @date 28.11.2016
+ * @date 03.01.2017
  *
  * @brief Main program module.
  *
@@ -25,32 +25,68 @@
 #include <sys/time.h>
 #include "shared.h"
 
-
-/* === Constants === */
-
-
 /* === Global Variables === */
 
-extern sig_atomic_t terminating;
+/** @brief Used to terminate the client only once. */
+static sig_atomic_t terminating;
+/** @brief Semaphor to allow client the initial request. @details Is a binary semaphor. */
 extern sem_t *sem1;
+/** @brief Semaphor to allow client further commands when logged in. @details Is a binary semaphor. */
 extern sem_t *sem2;
+/** @brief Semaphor to sync waiting for response from server. @details Is a binary semaphor. */
 extern sem_t *sem3;
-
-char *progname;
-char *username;
-char *password;
-char session_id[MAX_DATA];
+/** @brief Holds the program name. */
+static char *progname;
+/** @brief Holds the username for logged-in requests. */
+static char *username;
+/** @brief Holds the password for logged-in requests. */
+static char *password;
+/** @brief Holds the session id for logged-in requests. */
+static char session_id[MAX_DATA];
+/** @brief The shared memory file descriptor */
 static int shmfd;
+/** @brief Flag for releasing the semaphor 2 in case of a client crash */
+static int server_waits = -1;
+/** @brief The shared command that is sent between server and client */
 static struct shared_command *shared;
-
+/** @brief The mode in which the client operates in. @details Is determined by the argument vector. */
 static int m = -1;
 
 /* === Prototypes === */
 
+/**
+ * @brief Frees the used resources.
+ * @details This method is also invoked when the signals SIGINT and SIGTERM occur.
+ */
 static void free_resources(void);
+/**
+ * @brief Exists the program with a given message.
+ * @param fmt Formatted string for parsing the latter arguments to.
+ */
 static void error_exit (const char *fmt, ...);
+/**
+ * @brief Prints a nice usage message.
+ */
 static void usage(void);
+/**
+ * @brief Set the operation mode (register | login) and verify only one mode is given.
+ * @param argc The argument counter.
+ * @param argv The argument vector.
+ */
 static void parse_args(int argc, char **argv);
+/**
+ * @brief Method to handle certain signals.
+ * @details Is invoked on SIGINT and SIGTERM.
+ * @param sig
+ */
+static void signal_handler(int sig);
+/**
+ * @brief The program entry point.
+ * @param argc The argument vector.
+ * @param argv The argument counter.
+ * @return EXIT_SUCCESS on succesful program execution, EXIT_FAILURE otherwise.
+ */
+int main(int argc, char **argv);
 
 /* === Implementations === */
 
@@ -121,6 +157,12 @@ static void free_resources(void) {
         return;
     }
     terminating = 1;
+    /* Tell server the client is done */
+    if (server_waits == 1) {
+        shared->command = COMMAND_NONE;
+        shared->modus = MODE_UNSET;
+        sem_post(sem2);
+    }
     /* Close shared memory */
     if (shmfd != -1) {
         (void) close (shmfd);
@@ -197,6 +239,7 @@ int main(int argc, char **argv) {
     strncpy(shared->username, argv[2], MAX_DATA);
     strncpy(shared->password, argv[3], MAX_DATA);
     strncpy(shared->session_id, session_id, MAX_DATA);
+    shared->command = COMMAND_NONE;
 
     switch (m) {
         case REGISTER:
@@ -214,7 +257,6 @@ int main(int argc, char **argv) {
                     error_exit("Failed to register a new user. User exists in database.");
                     break;
                 default:
-                    debug_info(shared);
                     error_exit("Unexpected status code while REGISTER:\n");
             }
             /* tell server to wait for a new request */
@@ -228,7 +270,6 @@ int main(int argc, char **argv) {
             switch (shared->status) {
                 case LOGIN_SUCCESS:
                     strncpy(session_id, shared->session_id, MAX_DATA);
-//                    strncpy(session_id, "blahh", MAX_DATA);
                     while (!logout) {
                         printf("Commands:\n  1) write secret\n  2) read secret\n  3) logout\nPlease select a command (1-3):\n");
                         char buffer[MAX_DATA];
@@ -249,15 +290,19 @@ int main(int argc, char **argv) {
                                 if (buf[len - 1] == '\n') {
                                     buf[len - 1] = '\0';
                                 }
-                                /* reserve semaphor here */
+                                /* wait for server to allow client to send request */
+                                sem_wait(sem1);
                                 shared->modus = LOGIN;
                                 shared->command = WRITE;
                                 strncpy(shared->secret, buf, MAX_DATA);
                                 strncpy(shared->username, argv[2], MAX_DATA);
                                 strncpy(shared->password, argv[3], MAX_DATA);
                                 strncpy(shared->session_id, session_id, MAX_DATA);
-                                DEBUG("Waiting for server ...\n");
-                                /* wait for server to login */
+                                server_waits = 1;
+                                /* tell server to continue */
+                                sem_post(sem2);
+                                /* wait for response */
+                                sem_wait(sem3);
                                 response = shared->status;
                                 /* tell server to wait for a new request */
                                 switch (response) {
@@ -272,18 +317,21 @@ int main(int argc, char **argv) {
                                         break;
                                     default:
                                         fprintf(stderr, "Unexpected response while WRITE.\n");
-                                        debug_info(shared);
                                         break;
                                 }
                                 break;
                             case READ:
-                                DEBUG("Command is READ.\n");
+                                /* wait for server to allow client to send request */
+                                sem_wait(sem1);
                                 shared->modus = LOGIN;
                                 shared->command = READ;
                                 strncpy(shared->username, argv[2], MAX_DATA);
                                 strncpy(shared->password, argv[3], MAX_DATA);
                                 strncpy(shared->session_id, session_id, MAX_DATA);
-                                DEBUG("waiting for server to send secret ...\n");
+                                /* tell server to continue */
+                                sem_post(sem2);
+                                /* wait for response */
+                                sem_wait(sem3);
                                 response = shared->status;
                                 switch (response) {
                                     case LOGIN_SUCCESS:
@@ -320,10 +368,8 @@ int main(int argc, char **argv) {
                     error_exit("Session auth failed.");
                     break;
                 default:
-                    debug_info(shared);
                     error_exit("Unexpected status code while LOGIN:\n");
             }
-            debug_info(shared);
             break;
         default:
             usage();

@@ -1,25 +1,39 @@
+/**
+ * @file shared.h
+ * @author Martin Weise <e1429167@student.tuwien.ac.at>
+ * @date 03.01.2017
+ *
+ * @brief Shared memory + debug utils header file.
+ *
+ **/
 
 /* === Constants === */
 
+/** @brief File name of the shared fragment */
 #define SHM_NAME "/1429167fragment"
+/** @brief Permission of the semaphor files created in /dev/shm/ */
 #define PERMISSION (0660)
+/** @brief Maximum length of all input data strings. */
 #define MAX_DATA (100)
 
+/** @brief File name of semaphor 1. */
 #define SEM1_NAME "/1429167sem1"
+/** @brief File name of semaphor 2. */
 #define SEM2_NAME "/1429167sem2"
+/** @brief File name of semaphor 3. */
 #define SEM3_NAME "/1429167sem3"
-#define SEM4_NAME "/1429167sem4"
 
 /* === Enums === */
 
+/** @brief Possible commands when the client is logged-in. */
 typedef enum {
     COMMAND_NONE, WRITE, READ, LOGOUT
 } cmd;
-
+/** @brief Possible operating modes of the client. */
 typedef enum {
     MODE_UNSET, REGISTER, LOGIN
 } mode;
-
+/** @brief Possible status codes in shared_command. */
 typedef enum {
     STATUS_NONE, SESSION_FAILED, LOGIN_SUCCESS, LOGIN_FAILED, REGISTER_SUCCESS, LOGOUT_SUCCESS,
     LOGOUT_FAILED, REGISTER_FAILED, WRITE_SECRET_SUCCESS, WRITE_SECRET_FAILED
@@ -27,6 +41,9 @@ typedef enum {
 
 /* === Structs === */
 
+/**
+ * @brief Defines an entry in the database of the server.
+ */
 struct entry {
     char username[MAX_DATA];
     char password[MAX_DATA];
@@ -36,7 +53,7 @@ struct entry {
 };
 
 /**
- * Defines a shared memory consisting a command and data from the client.
+ * @brief Defines a shared memory consisting a command and data from the client.
  */
 struct shared_command {
     status status;
@@ -54,12 +71,8 @@ struct shared_command {
  * @brief Provides a debugging function to output status messages
  * @details Activate/Deactivate by adding/removing -DENDEBUG to DEFS in Makefile.
  */
-#if defined(ENDEBUG)
+#ifdef ENDEBUG
 #define DEBUG(...) do { fprintf(stderr, __VA_ARGS__); } while(0)
 #else
 #define DEBUG(...)
 #endif
-
-/* === Prototypes === */
-
-void debug_info(struct shared_command *ptr);

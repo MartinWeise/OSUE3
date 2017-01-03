@@ -7,13 +7,11 @@
 # \info Add -lrt on _end_ of compilation line
 
 CC=gcc
-DEFS=-D_XOPEN_SOURCE=500 -D_BSD_SOURCE -DENDEBUG
+DEFS=-D_XOPEN_SOURCE=500 -D_BSD_SOURCE
 CFLAGS=-Wall -g -std=c99 -pedantic -lm -lcrypto -pthread $(DEFS)
 LDFLAGS=-lrt -lpthread
 
 all: src/auth-server src/auth-client
-
-# COMPILE
 
 %.o: %.c %.h
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -24,16 +22,11 @@ src/auth-server: src/auth-server.o src/shared.o
 src/auth-client: src/auth-client.o src/shared.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-# DEBUG
-
-runs: src/auth-server
-	src/auth-server -l database
-
-runc: src/auth-client
-	src/auth-client
-
 test: all
 	sh test/test.sh
+
+doxygen:
+	doxygen doc/Doxyfile
 
 clean:
 	rm -f src/auth-server src/auth-server.o src/auth-client src/auth-client.o
