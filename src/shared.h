@@ -8,6 +8,7 @@
 #define SEM1_NAME "/1429167sem1"
 #define SEM2_NAME "/1429167sem2"
 #define SEM3_NAME "/1429167sem3"
+#define SEM4_NAME "/1429167sem4"
 
 /* === Enums === */
 
@@ -20,7 +21,7 @@ typedef enum {
 } mode;
 
 typedef enum {
-    STATUS_NONE, LOGIN_SUCCESS, LOGIN_FAILED, REGISTER_SUCCESS, LOGOUT_SUCCESS,
+    STATUS_NONE, SESSION_FAILED, LOGIN_SUCCESS, LOGIN_FAILED, REGISTER_SUCCESS, LOGOUT_SUCCESS,
     LOGOUT_FAILED, REGISTER_FAILED, WRITE_SECRET_SUCCESS, WRITE_SECRET_FAILED
 } status;
 
@@ -30,6 +31,7 @@ struct entry {
     char username[MAX_DATA];
     char password[MAX_DATA];
     char secret[MAX_DATA];
+    char session_id[MAX_DATA];
     struct entry* next;
 };
 
@@ -40,7 +42,7 @@ struct shared_command {
     status status;
     mode modus;
     cmd command;
-    suseconds_t  id;
+    char session_id[MAX_DATA];
     char username[MAX_DATA];
     char password[MAX_DATA];
     char secret[MAX_DATA];
@@ -60,4 +62,4 @@ struct shared_command {
 
 /* === Prototypes === */
 
-void print_shared(struct shared_command *ptr);
+void debug_info(struct shared_command *ptr);

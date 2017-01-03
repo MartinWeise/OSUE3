@@ -31,11 +31,9 @@ struct entry *first = NULL;
 
 int shmfd = -1;
 
-/** Shared memory semaphor */
+/** Action synchronize */
 sem_t *sem1;
-/** Next action semaphor */
 sem_t *sem2;
-/** TODO */
 sem_t *sem3;
 
 struct shared_command *shared = NULL;
@@ -56,15 +54,26 @@ static const char *CMD_STRING[] = {
 };
 /* === Implementations === */
 
-void print_shared(struct shared_command *ptr) {
+void debug_info(struct shared_command *ptr) {
+    int s1, s2, s3;
+    sem_getvalue(sem1, &s1);
+    sem_getvalue(sem2, &s2);
+    sem_getvalue(sem3, &s3);
+
+    DEBUG("======================\n"
+        "       DEBUG INFO\n"
+        "======================\n"
+        "sem1: %d,\n"
+        "sem2: %d,\n"
+        "sem3: %d\n", s1, s2, s3);
     DEBUG("shared = {\n"                        \
         "    status: %s,\n"                     \
         "    modus: %s,\n"                      \
         "    command: %s,\n"                    \
-        "    id: %d,\n"                         \
+        "    id: '%s',\n"                       \
         "    username: '%s',\n"                 \
         "    password: '%s',\n"                 \
         "    secret: '%s'\n"                    \
         "}\n", STATUS_STRING[ptr->status], MODE_STRING[ptr->modus], CMD_STRING[ptr->command],
-          1, ptr->username, ptr->password, ptr->secret);
+          ptr->session_id, ptr->username, ptr->password, ptr->secret);
 }

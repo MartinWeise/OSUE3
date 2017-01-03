@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <fcntl.h>
+#include <time.h>
 #include <semaphore.h>
 #include <sys/time.h>
 #include "shared.h"
@@ -47,6 +48,8 @@ static void save(void);
 static int prepend(struct shared_command *update);
 static struct entry *search(struct shared_command *update);
 static int update_secret(struct shared_command *update);
+static char *rdm_id(void);
+static int set_id(struct entry *update);
 
 /* === Global Variables === */
 
@@ -71,6 +74,9 @@ static void usage(void) {
 static int parse_args(int argc, char **argv) {
     int flag_l = -1;
     char opt;
+    if (argc == 1) {
+        return 1;
+    }
     if (argc > 3 || argc == 2) {
         return -1;
     }
@@ -223,13 +229,29 @@ static void signal_handler(int sig) {
 
 static int update_secret(struct shared_command *update) {
     struct entry *tmp = first;
-    print_shared(update);
     while (1) {
         if (tmp != NULL) {
             if (strcmp(tmp->username, update->username) == 0
                 && strcmp(tmp->password, update->password) == 0) {
                 /* registered user found */
                 strncpy(tmp->secret, update->secret, MAX_DATA);
+                return 1;
+            }
+            tmp = tmp->next;
+            continue;
+        }
+        return -1;
+    }
+}
+
+static int set_id(struct entry *update) {
+    struct entry *tmp = first;
+    while (1) {
+        if (tmp != NULL) {
+            if (strcmp(tmp->username, update->username) == 0
+                && strcmp(tmp->password, update->password) == 0) {
+                /* registered user found */
+                strncpy(tmp->session_id, update->session_id, MAX_DATA);
                 return 1;
             }
             tmp = tmp->next;
@@ -268,11 +290,20 @@ static struct entry *search(struct shared_command *update) {
     }
 }
 
+static char *rdm_id(void) {
+    char *s = malloc(MAX_DATA);
+    srand(time(NULL));
+    for(int i = 0; i < MAX_DATA; i++) {
+        s[i] = '0' + rand()%72;
+    }
+    return s;
+}
+
 int main(int argc, char **argv) {
     const int signals[] = {SIGINT, SIGTERM};
     struct sigaction s;
     sigset_t blocked_signals;
-    struct entry *tmp;
+    struct entry *tmp = malloc(sizeof(struct entry));
 
     progname = argv[0];
     /* Fill set with all signals */
@@ -287,7 +318,6 @@ int main(int argc, char **argv) {
             error_exit("Changing of signal failed.");
         }
     }
-
     if (parse_args(argc, argv) == -1) {
         usage();
     }
@@ -310,65 +340,79 @@ int main(int argc, char **argv) {
         error_exit("mmap did not init a shared_command.");
     }
     /* Create Semaphores */
-    if ((sem1 = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+    if ((sem1 = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore 1.");
     }
     if ((sem2 = sem_open(SEM2_NAME, O_CREAT | O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore 2.");
     }
-    if ((sem3 = sem_open(SEM3_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
+    if ((sem3 = sem_open(SEM3_NAME, O_CREAT | O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore 3.");
     }
     DEBUG("Server running ...\n");
     while (1) {
-        /* reserve semaphor here */
-        sem_wait(sem1);
-        sem_post(sem2);
+        /* allow one client to send request */
+        sem_post(sem1);
+        /* wait for request */
+        sem_wait(sem2);
+        debug_info(shared);
+        if (strlen(shared->session_id) > 0) {
+            if ((tmp = search(shared)) == NULL) {
+                shared->status = LOGIN_FAILED;
+                sem_post(sem3);
+                continue;
+            } else if (strcmp(tmp->session_id, shared->session_id) != 0) {
+                shared->status = SESSION_FAILED;
+                sem_post(sem3);
+                continue;
+            }
+        }
+        sem_post(sem3);
         switch (shared->modus) {
             case LOGIN:
-                switch (shared->command) {
-                    case WRITE:
-                        if (update_secret(shared) == -1) {
-                            shared->status = WRITE_SECRET_FAILED;
-                        } else {
-                            shared->status = WRITE_SECRET_SUCCESS;
-                        }
-                        /* reset */
-                        shared->modus = MODE_UNSET;
-                        shared->command = COMMAND_NONE;
-                        break;
-                    case READ:
+//                switch (shared->command) {
+//                    case WRITE:
+//                        if (update_secret(shared) == -1) {
+//                            shared->status = WRITE_SECRET_FAILED;
+//                        } else {
+//                            shared->status = WRITE_SECRET_SUCCESS;
+//                        }
+//                        break;
+//                    case READ:
+//                        if ((tmp = search(shared)) == NULL) {
+//                            shared->status = LOGIN_FAILED;
+//                        } else {
+//                            strncpy(shared->secret, tmp->secret, MAX_DATA);
+//                            shared->status = LOGIN_SUCCESS;
+//                        }
+//                        break;
+                    default:
                         if ((tmp = search(shared)) == NULL) {
                             shared->status = LOGIN_FAILED;
                         } else {
-                            strncpy(shared->secret, tmp->secret, MAX_DATA);
+                            char *id = rdm_id();
+                            strncpy(tmp->session_id, id, MAX_DATA);
+                            set_id(tmp);
+                            strncpy(shared->session_id, id, MAX_DATA); // TODO: username at end of random sequence?
                             shared->status = LOGIN_SUCCESS;
                         }
-                        /* reset */
-                        shared->modus = MODE_UNSET;
-                        shared->command = COMMAND_NONE;
-                        break;
-                    default:
                         break;
                 }
-                break;
-            case REGISTER:
-                /* reserve semaphor here */
-                if (prepend(shared) == -1) {
-                    shared->status = REGISTER_FAILED;
-                } else {
-                    shared->status = REGISTER_SUCCESS;
-                }
-                shared->modus = MODE_UNSET;
-                shared->command = COMMAND_NONE;
-                print_shared(shared);
-                /* release semaphor here */
-                break;
-            default:
-                break;
-        }
-        sem_post(sem1);
-        sem_wait(sem2);
+//                /* tell client to continue */
+//                sem_post(sem3);
+//                break;
+//            case REGISTER:
+//                if (prepend(shared) == -1) {
+//                    shared->status = REGISTER_FAILED;
+//                } else {
+//                    shared->status = REGISTER_SUCCESS;
+//                }
+//                /* tell client to continue */
+//                sem_post(sem3);
+//                break;
+//            default:
+//                break;
+//        }
+        
     }
-    return EXIT_SUCCESS;
 }
