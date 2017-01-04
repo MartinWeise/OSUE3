@@ -28,7 +28,7 @@
 /**
  * @brief Method to handle certain signals.
  * @details Is invoked on SIGINT and SIGTERM.
- * @param sig
+ * @param sig Signal code.
  */
 static void signal_handler(int sig);
 /**
@@ -193,9 +193,8 @@ static void save(void) {
     }
     DEBUG("\nSaving to auth-server.db.csv.\n");
     while (ptr != NULL) {
-        // TODO Trimming
         fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
-        DEBUG("> %s;%s;%s;sessid=%s\n", ptr->username, ptr->password, ptr->secret, ptr->session_id);
+        DEBUG("> u: %s; p: %s; s: %s; sessid: %s\n", ptr->username, ptr->password, ptr->secret, ptr->session_id);
         ptr = ptr->next;
     }
 }
@@ -303,10 +302,10 @@ static struct entry *search(struct shared_command *update) {
 }
 
 static char *rdm_id(void) {
-    char *s = malloc(20);
+    char *s = malloc(SIZE_SESS_ID);
     char *chars = "AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789";
     srand(time(NULL));
-    for(int i = 0; i < 20; i++) {
+    for(int i = 0; i < SIZE_SESS_ID; i++) {
         s[i] = chars[rand() % strlen(chars)];
     }
     return s;
@@ -375,6 +374,7 @@ int main(int argc, char **argv) {
                         if ((tmp = search(shared)) == NULL) {
                             shared->status = WRITE_SECRET_FAILED;
                         } else if (strcmp(tmp->session_id, shared->session_id) == 0) {
+                            /* Save secret in database */
                             strncpy(tmp->secret, shared->secret, MAX_DATA);
                             shared->status = WRITE_SECRET_SUCCESS;
                         } else {
@@ -385,8 +385,20 @@ int main(int argc, char **argv) {
                         if ((tmp = search(shared)) == NULL) {
                             shared->status = LOGIN_FAILED;
                         } else if (strcmp(tmp->session_id, shared->session_id) == 0) {
+                            /* Write secret to fragment */
                             strncpy(shared->secret, tmp->secret, MAX_DATA);
                             shared->status = LOGIN_SUCCESS;
+                        } else {
+                            shared->status = SESSION_FAILED;
+                        }
+                        break;
+                    case LOGOUT:
+                        if ((tmp = search(shared)) == NULL) {
+                            shared->status = LOGOUT_FAILED;
+                        } else if (strcmp(tmp->session_id, shared->session_id) == 0) {
+                            /* destroy session id */
+                            memset(tmp->session_id, 0, sizeof tmp->session_id);
+                            shared->status = LOGOUT_SUCCESS;
                         } else {
                             shared->status = SESSION_FAILED;
                         }

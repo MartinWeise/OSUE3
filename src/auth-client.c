@@ -77,7 +77,7 @@ static void parse_args(int argc, char **argv);
 /**
  * @brief Method to handle certain signals.
  * @details Is invoked on SIGINT and SIGTERM.
- * @param sig
+ * @param sig Signal code.
  */
 static void signal_handler(int sig);
 /**
@@ -104,8 +104,6 @@ static void parse_args(int argc, char **argv) {
     if (argc != 4 || optind != 1) {
         usage();
     }
-    username = argv[2];
-    password = argv[3];
     while ((opt = getopt (argc, argv, "r:l:")) != -1 && flag_d == -1) {
         switch (opt) {
             case 'l':
@@ -128,6 +126,8 @@ static void parse_args(int argc, char **argv) {
         }
     }
     if ((flag_l == 1) ^ (flag_r == 1)) {
+        username = argv[2];
+        password = argv[3];
         return;
     }
     usage();
@@ -236,9 +236,8 @@ int main(int argc, char **argv) {
 
     /* wait for server to allow client to send request */
     sem_wait(sem1);
-    strncpy(shared->username, argv[2], MAX_DATA);
-    strncpy(shared->password, argv[3], MAX_DATA);
-    strncpy(shared->session_id, session_id, MAX_DATA);
+    strncpy(shared->username, username, MAX_DATA);
+    strncpy(shared->password, password, MAX_DATA);
     shared->command = COMMAND_NONE;
 
     switch (m) {
@@ -295,8 +294,8 @@ int main(int argc, char **argv) {
                                 shared->modus = LOGIN;
                                 shared->command = WRITE;
                                 strncpy(shared->secret, buf, MAX_DATA);
-                                strncpy(shared->username, argv[2], MAX_DATA);
-                                strncpy(shared->password, argv[3], MAX_DATA);
+                                strncpy(shared->username, username, MAX_DATA);
+                                strncpy(shared->password, password, MAX_DATA);
                                 strncpy(shared->session_id, session_id, MAX_DATA);
                                 server_waits = 1;
                                 /* tell server to continue */
@@ -325,8 +324,8 @@ int main(int argc, char **argv) {
                                 sem_wait(sem1);
                                 shared->modus = LOGIN;
                                 shared->command = READ;
-                                strncpy(shared->username, argv[2], MAX_DATA);
-                                strncpy(shared->password, argv[3], MAX_DATA);
+                                strncpy(shared->username, username, MAX_DATA);
+                                strncpy(shared->password, password, MAX_DATA);
                                 strncpy(shared->session_id, session_id, MAX_DATA);
                                 /* tell server to continue */
                                 sem_post(sem2);
@@ -349,10 +348,34 @@ int main(int argc, char **argv) {
                                 }
                                 break;
                             case LOGOUT:
-                                // TODO: logout destroys the session id
-                                DEBUG("Command is LOGOUT.\n");
-                                /* tell server to wait for a new request */
-                                logout = true;
+                                /* wait for server to allow client to send request */
+                                sem_wait(sem1);
+                                shared->modus = LOGIN;
+                                shared->command = LOGOUT;
+                                strncpy(shared->username, username, MAX_DATA);
+                                strncpy(shared->password, password, MAX_DATA);
+                                strncpy(shared->session_id, session_id, MAX_DATA);
+                                /* tell server to continue */
+                                sem_post(sem2);
+                                /* wait for response */
+                                sem_wait(sem3);
+                                response = shared->status;
+                                switch (response) {
+                                    case LOGOUT_SUCCESS:
+                                        logout = true;
+                                        printf("Logout successful. Goodbye!\n");
+                                        exit(EXIT_SUCCESS);
+                                        break;
+                                    case LOGOUT_FAILED:
+                                        error_exit("Logout failed. User does not exist in database.");
+                                        break;
+                                    case SESSION_FAILED:
+                                        error_exit("Session auth failed.");
+                                        break;
+                                    default:
+                                        error_exit("Unexpected response value.");
+                                        break;
+                                }
                                 break;
                             default:
                                 /* tell server to wait for a new request */

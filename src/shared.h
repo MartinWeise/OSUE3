@@ -15,6 +15,8 @@
 #define PERMISSION (0660)
 /** @brief Maximum length of all input data strings. */
 #define MAX_DATA (100)
+/** @brief Size of the session id */
+#define SIZE_SESS_ID (20)
 
 /** @brief File name of semaphor 1. */
 #define SEM1_NAME "/1429167sem1"
@@ -45,10 +47,15 @@ typedef enum {
  * @brief Defines an entry in the database of the server.
  */
 struct entry {
+    /** @brief Holds the username of a registered user. */
     char username[MAX_DATA];
+    /** @brief Holds the password of a registered user. */
     char password[MAX_DATA];
+    /** @brief Holds the secret of a registered user. @details Can be left blank if user has no secret stored. */
     char secret[MAX_DATA];
+    /** @brief Holds the session id of a registered user. @details Is left blank if user is not logged in. */
     char session_id[MAX_DATA];
+    /** @brief Points to the next entry in the list. */
     struct entry* next;
 };
 
@@ -56,12 +63,19 @@ struct entry {
  * @brief Defines a shared memory consisting a command and data from the client.
  */
 struct shared_command {
+    /** @brief Holds the response code of the server when a user requests a action. */
     status status;
+/** @brief Defines the modus in which a client operates for a given user (username, password). @details Is either REGISTER or LOGIN. */
     mode modus;
+    /** @brief Defines the command the server should execute for a given logged-in user (username, password). @details Is either READ, WRITE or LOGOUT */
     cmd command;
+    /** @brief Holds the session id. Has to be sent on every request from the client to the server. */
     char session_id[MAX_DATA];
+    /** @brief Required username attribute. @details Is checked on every request */
     char username[MAX_DATA];
+    /** @brief Required password attribute. @details Is checked on every request */
     char password[MAX_DATA];
+    /** @brief Holds the secret of a user. */
     char secret[MAX_DATA];
 };
 
