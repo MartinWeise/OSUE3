@@ -25,6 +25,9 @@ src/auth-client: src/auth-client.o src/shared.o
 test: all
 	sh test/test.sh
 
+zip:
+	tar -cvzf submission-osue3.tgz src/* Makefile doc/Doxyfile
+
 doxygen:
 	doxygen doc/Doxyfile
 
