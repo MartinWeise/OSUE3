@@ -45,7 +45,8 @@ static char *password;
 static char session_id[MAX_DATA];
 /** @brief The shared memory file descriptor */
 static int shmfd;
-/** @brief Flag for releasing the semaphor 2 in case of a client crash */
+/** @brief Flag for releasing the used semaphores in case of a client crash
+ * @details -1 = no semaphor used, 1 = semaphor 2 used. */
 static int server_waits = -1;
 /** @brief The shared command that is sent between server and client */
 static struct shared_command *shared;
@@ -91,7 +92,7 @@ int main(int argc, char **argv);
 /* === Implementations === */
 
 static void usage() {
-    fprintf (stderr, "USAGE: %s { -r | -l } username password\n", progname);
+    (void) fprintf (stderr, "USAGE: %s { -r | -l } username password\n", progname);
     exit(EXIT_FAILURE);
 }
 
@@ -158,7 +159,7 @@ static void free_resources(void) {
     }
     terminating = 1;
     /* Tell server the client is done */
-    if (server_waits == 1) {
+    if (server_waits != -1) {
         shared->command = COMMAND_NONE;
         shared->modus = MODE_UNSET;
         sem_post(sem2);
@@ -235,18 +236,19 @@ int main(int argc, char **argv) {
     DEBUG("Client running ...\n");
 
     /* wait for server to allow client to send request */
-    sem_wait(sem1);
-    strncpy(shared->username, username, MAX_DATA);
-    strncpy(shared->password, password, MAX_DATA);
+    (void) sem_wait(sem1);
+    server_waits = 1;
+    (void) strncpy(shared->username, username, MAX_DATA);
+    (void) strncpy(shared->password, password, MAX_DATA);
     shared->command = COMMAND_NONE;
 
     switch (m) {
         case REGISTER:
             shared->modus = REGISTER;
             /* tell server to continue */
-            sem_post(sem2);
+            (void) sem_post(sem2);
             /* wait for response */
-            sem_wait(sem3);
+            (void) sem_wait(sem3);
             switch (shared->status) {
                 case REGISTER_SUCCESS:
                     printf("Successfully registered a new user.\n");
@@ -263,10 +265,11 @@ int main(int argc, char **argv) {
         case LOGIN:
             shared->modus = LOGIN;
             /* tell server to continue */
-            sem_post(sem2);
+            (void) sem_post(sem2);
             /* wait for response */
-            sem_wait(sem3);
-            switch (shared->status) {
+            (void) sem_wait(sem3);
+            response = shared->status;
+            switch (response) {
                 case LOGIN_SUCCESS:
                     strncpy(session_id, shared->session_id, MAX_DATA);
                     while (!logout) {
@@ -290,18 +293,18 @@ int main(int argc, char **argv) {
                                     buf[len - 1] = '\0';
                                 }
                                 /* wait for server to allow client to send request */
-                                sem_wait(sem1);
+                                (void) sem_wait(sem1);
+                                server_waits = 1;
                                 shared->modus = LOGIN;
                                 shared->command = WRITE;
-                                strncpy(shared->secret, buf, MAX_DATA);
-                                strncpy(shared->username, username, MAX_DATA);
-                                strncpy(shared->password, password, MAX_DATA);
-                                strncpy(shared->session_id, session_id, MAX_DATA);
-                                server_waits = 1;
+                                (void) strncpy(shared->secret, buf, MAX_DATA);
+                                (void) strncpy(shared->username, username, MAX_DATA);
+                                (void) strncpy(shared->password, password, MAX_DATA);
+                                (void) strncpy(shared->session_id, session_id, MAX_DATA);
                                 /* tell server to continue */
-                                sem_post(sem2);
+                                (void) sem_post(sem2);
                                 /* wait for response */
-                                sem_wait(sem3);
+                                (void) sem_wait(sem3);
                                 response = shared->status;
                                 /* tell server to wait for a new request */
                                 switch (response) {
@@ -315,22 +318,23 @@ int main(int argc, char **argv) {
                                         error_exit("Session auth failed.");
                                         break;
                                     default:
-                                        fprintf(stderr, "Unexpected response while WRITE.\n");
+                                        (void) fprintf(stderr, "Unexpected response while WRITE.\n");
                                         break;
                                 }
                                 break;
                             case READ:
                                 /* wait for server to allow client to send request */
-                                sem_wait(sem1);
+                                (void) sem_wait(sem1);
+                                server_waits = 1;
                                 shared->modus = LOGIN;
                                 shared->command = READ;
-                                strncpy(shared->username, username, MAX_DATA);
-                                strncpy(shared->password, password, MAX_DATA);
-                                strncpy(shared->session_id, session_id, MAX_DATA);
+                                (void) strncpy(shared->username, username, MAX_DATA);
+                                (void) strncpy(shared->password, password, MAX_DATA);
+                                (void) strncpy(shared->session_id, session_id, MAX_DATA);
                                 /* tell server to continue */
-                                sem_post(sem2);
+                                (void) sem_post(sem2);
                                 /* wait for response */
-                                sem_wait(sem3);
+                                (void) sem_wait(sem3);
                                 response = shared->status;
                                 switch (response) {
                                     case LOGIN_SUCCESS:
@@ -349,21 +353,23 @@ int main(int argc, char **argv) {
                                 break;
                             case LOGOUT:
                                 /* wait for server to allow client to send request */
-                                sem_wait(sem1);
+                                errno = -1;
+                                (void) sem_wait(sem1);
+                                server_waits = 1;
                                 shared->modus = LOGIN;
                                 shared->command = LOGOUT;
-                                strncpy(shared->username, username, MAX_DATA);
-                                strncpy(shared->password, password, MAX_DATA);
-                                strncpy(shared->session_id, session_id, MAX_DATA);
+                                (void) strncpy(shared->username, username, MAX_DATA);
+                                (void) strncpy(shared->password, password, MAX_DATA);
+                                (void) strncpy(shared->session_id, session_id, MAX_DATA);
                                 /* tell server to continue */
-                                sem_post(sem2);
+                                (void) sem_post(sem2);
                                 /* wait for response */
-                                sem_wait(sem3);
+                                (void) sem_wait(sem3);
                                 response = shared->status;
                                 switch (response) {
                                     case LOGOUT_SUCCESS:
                                         logout = true;
-                                        printf("Logout successful. Goodbye!\n");
+                                        (void) printf("Logout successful. Goodbye!\n");
                                         exit(EXIT_SUCCESS);
                                         break;
                                     case LOGOUT_FAILED:
@@ -373,13 +379,13 @@ int main(int argc, char **argv) {
                                         error_exit("Session auth failed.");
                                         break;
                                     default:
-                                        error_exit("Unexpected response value.");
+                                        error_exit("Unexpected response value: %d.", response);
                                         break;
                                 }
                                 break;
                             default:
                                 /* tell server to wait for a new request */
-                                fprintf(stderr, "Invalid command. Please try again:\n");
+                                (void) fprintf(stderr, "Invalid command. Please try again:\n");
                                 break;
                         }
                     }

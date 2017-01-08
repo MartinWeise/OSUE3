@@ -71,7 +71,3 @@ if ls /dev/shm | grep -q "1429167"; then
 else
     printf "${GREEN}OK${NC}\n"
 fi
-
-#! CHECK SERVER
-echo "################ TEST 8 ################"
-printf "${GREEN}OK${NC}\n"

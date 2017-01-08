@@ -92,7 +92,7 @@ int main(int argc, char **argv);
 /** @brief The shared memory file descriptor */
 static int shmfd;
 /** @brief Used to terminate the client only once. */
-static sig_atomic_t terminating;
+static volatile sig_atomic_t terminating;
 /** @brief Semaphor to allow client the initial request. @details Is a binary semaphor. */
 extern sem_t *sem1;
 /** @brief Semaphor to allow client further commands when logged in. @details Is a binary semaphor. */
@@ -108,6 +108,8 @@ static char *progname;
 static char *dbname = NULL;
 /** @brief The shared fragment between server and client */
 static struct shared_command *shared = NULL;
+/** @brief Used to save the database only once. */
+static int saved = -1;
 
 /* === Implementations === */
 
@@ -165,13 +167,13 @@ static void parse_database(void) {
                 switch(i) {
                     case 0:
                         data = malloc(sizeof(struct entry));
-                        strncpy(data->username, tok, MAX_DATA);
+                        (void) strncpy(data->username, tok, MAX_DATA);
                         break;
                     case 1:
-                        strncpy(data->password, tok, MAX_DATA);
+                        (void) strncpy(data->password, tok, MAX_DATA);
                         break;
                     case 2:
-                        strncpy(data->secret, tok, MAX_DATA);
+                        (void) strncpy(data->secret, tok, MAX_DATA);
                         break;
                     default:
                         error_exit("Malformed input data.");
@@ -188,15 +190,22 @@ static void save(void) {
     FILE *db;
     struct entry *ptr = first;
 
+    if (saved != -1) {
+        return;
+    }
     if ((db = fopen("auth-server.db.csv", "w+")) == NULL) {
         error_exit("Couldn't open the database file.");
     }
     DEBUG("\nSaving to auth-server.db.csv.\n");
     while (ptr != NULL) {
-        fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
+        (void) fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
         DEBUG("> u: %s; p: %s; s: %s; sessid: %s\n", ptr->username, ptr->password, ptr->secret, ptr->session_id);
         ptr = ptr->next;
     }
+    if (fclose(db) == -1) {
+        error_exit("Failed to close save file.");
+    }
+    saved = 1;
 }
 
 static void error_exit (const char *fmt, ...) {
@@ -277,9 +286,9 @@ static int prepend(struct shared_command *update) {
         return -1;
     }
     struct entry *tmp = malloc(sizeof(struct entry));
-    strncpy(tmp->username, update->username, MAX_DATA);
-    strncpy(tmp->password, update->password, MAX_DATA);
-    strncpy(tmp->secret, update->secret, MAX_DATA);
+    (void) strncpy(tmp->username, update->username, MAX_DATA);
+    (void) strncpy(tmp->password, update->password, MAX_DATA);
+    (void) strncpy(tmp->secret, update->secret, MAX_DATA);
     tmp->next = first;
     first = tmp;
     return 1;
@@ -304,7 +313,7 @@ static struct entry *search(struct shared_command *update) {
 static char *rdm_id(void) {
     char *s = malloc(SIZE_SESS_ID);
     char *chars = "AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789";
-    srand(time(NULL));
+    (void) srand(time(NULL));
     for(int i = 0; i < SIZE_SESS_ID; i++) {
         s[i] = chars[rand() % strlen(chars)];
     }
@@ -325,14 +334,17 @@ int main(int argc, char **argv) {
     s.sa_handler = signal_handler;
     (void) memcpy(&s.sa_mask, &blocked_signals, sizeof(s.sa_mask));
     s.sa_flags = SA_RESTART;
+
     for(int i = 0; i < 2; i++) {
         if (sigaction(signals[i], &s, NULL) < 0) {
             error_exit("Changing of signal failed.");
         }
     }
+
     if (parse_args(argc, argv) == -1) {
         usage();
     }
+
     parse_database();
 
     /* Open shared memory object SHM_NAME in for reading and writing,
@@ -361,12 +373,14 @@ int main(int argc, char **argv) {
     if ((sem3 = sem_open(SEM3_NAME, O_CREAT | O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore 3.");
     }
+
     DEBUG("Server running ...\n");
+
     while (1) {
         /* allow one client to send request */
-        sem_post(sem1);
+        (void) sem_post(sem1);
         /* wait for request */
-        sem_wait(sem2);
+        (void) sem_wait(sem2);
         switch (shared->modus) {
             case LOGIN:
                 switch (shared->command) {
@@ -375,7 +389,7 @@ int main(int argc, char **argv) {
                             shared->status = WRITE_SECRET_FAILED;
                         } else if (strcmp(tmp->session_id, shared->session_id) == 0) {
                             /* Save secret in database */
-                            strncpy(tmp->secret, shared->secret, MAX_DATA);
+                            (void) strncpy(tmp->secret, shared->secret, MAX_DATA);
                             shared->status = WRITE_SECRET_SUCCESS;
                         } else {
                             shared->status = SESSION_FAILED;
@@ -386,7 +400,7 @@ int main(int argc, char **argv) {
                             shared->status = LOGIN_FAILED;
                         } else if (strcmp(tmp->session_id, shared->session_id) == 0) {
                             /* Write secret to fragment */
-                            strncpy(shared->secret, tmp->secret, MAX_DATA);
+                            (void) strncpy(shared->secret, tmp->secret, MAX_DATA);
                             shared->status = LOGIN_SUCCESS;
                         } else {
                             shared->status = SESSION_FAILED;
@@ -408,14 +422,14 @@ int main(int argc, char **argv) {
                             shared->status = LOGIN_FAILED;
                         } else {
                             char *id = rdm_id();
-                            strncpy(tmp->session_id, id, MAX_DATA);
-                            strncpy(shared->session_id, id, MAX_DATA);
+                            (void) strncpy(tmp->session_id, id, MAX_DATA);
+                            (void) strncpy(shared->session_id, id, MAX_DATA);
                             shared->status = LOGIN_SUCCESS;
                         }
                         break;
                 }
                 /* tell client to continue */
-                sem_post(sem3);
+                (void) sem_post(sem3);
                 break;
             case REGISTER:
                 if (prepend(shared) == -1) {
@@ -424,7 +438,7 @@ int main(int argc, char **argv) {
                     shared->status = REGISTER_SUCCESS;
                 }
                 /* tell client to continue */
-                sem_post(sem3);
+                (void) sem_post(sem3);
                 break;
             default:
                 break;

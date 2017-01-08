@@ -7,7 +7,7 @@
 # \info Add -lrt on _end_ of compilation line
 
 CC=gcc
-DEFS=-D_XOPEN_SOURCE=500 -D_BSD_SOURCE
+DEFS=-D_XOPEN_SOURCE=500 -D_BSD_SOURCE -DENDEBUG
 CFLAGS=-Wall -g -std=c99 -pedantic -lm -lcrypto -pthread $(DEFS)
 LDFLAGS=-lrt -lpthread
 
@@ -26,7 +26,7 @@ test: all
 	sh test/test.sh
 
 zip:
-	tar -cvzf submission-osue3.tgz src/* Makefile doc/Doxyfile
+	tar -cvzf submission-osue3.tgz src/*.c src/*.h Makefile doc/Doxyfile
 
 doxygen:
 	doxygen doc/Doxyfile
