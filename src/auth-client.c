@@ -223,7 +223,7 @@ int main(int argc, char **argv) {
         error_exit("Couldn't create mapping.");
     }
     /* Create Semaphores */
-    if ((sem1 = sem_open(SEM1_NAME, O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
+    if ((sem1 = sem_open(SEM1_NAME, O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore 1.");
     }
     if ((sem2 = sem_open(SEM2_NAME, O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
@@ -247,6 +247,8 @@ int main(int argc, char **argv) {
             shared->modus = REGISTER;
             /* tell server to continue */
             (void) sem_post(sem2);
+            (void) sem_post(sem1);
+            server_waits = -1;
             /* wait for response */
             (void) sem_wait(sem3);
             switch (shared->status) {
@@ -266,6 +268,8 @@ int main(int argc, char **argv) {
             shared->modus = LOGIN;
             /* tell server to continue */
             (void) sem_post(sem2);
+            (void) sem_post(sem1);
+            server_waits = -1;
             /* wait for response */
             (void) sem_wait(sem3);
             response = shared->status;
@@ -273,120 +277,129 @@ int main(int argc, char **argv) {
                 case LOGIN_SUCCESS:
                     strncpy(session_id, shared->session_id, MAX_DATA);
                     while (!logout) {
-                        printf("Commands:\n  1) write secret\n  2) read secret\n  3) logout\nPlease select a command (1-3):\n");
-                        char buffer[MAX_DATA];
-                        if (fgets(buffer, sizeof buffer, stdin) == NULL) {
-                            error_exit("fgets");
-                        }
-                        cmd command = (int) strtol(buffer, (char **)NULL, 10);
-                        /* now switch between the commands */
-                        switch (command) {
-                            case WRITE:
-                                DEBUG("Command is WRITE.\n");
-                                char buf[MAX_DATA];
-                                printf("Write secret here, commit with [RETURN]:\n");
-                                if (fgets(buf, sizeof buf, stdin) == NULL) {
-                                    error_exit("fgets secret");
-                                }
-                                int len = strlen(buf);
-                                if (buf[len - 1] == '\n') {
-                                    buf[len - 1] = '\0';
-                                }
-                                /* wait for server to allow client to send request */
-                                (void) sem_wait(sem1);
-                                server_waits = 1;
-                                shared->modus = LOGIN;
-                                shared->command = WRITE;
-                                (void) strncpy(shared->secret, buf, MAX_DATA);
-                                (void) strncpy(shared->username, username, MAX_DATA);
-                                (void) strncpy(shared->password, password, MAX_DATA);
-                                (void) strncpy(shared->session_id, session_id, MAX_DATA);
-                                /* tell server to continue */
-                                (void) sem_post(sem2);
-                                /* wait for response */
-                                (void) sem_wait(sem3);
-                                response = shared->status;
-                                /* tell server to wait for a new request */
-                                switch (response) {
-                                    case WRITE_SECRET_SUCCESS:
-                                        printf("Successfully wrote the secret.\n");
-                                        break;
-                                    case WRITE_SECRET_FAILED:
-                                        error_exit("Failed to write the secret. User does not exist in database.");
-                                        break;
-                                    case SESSION_FAILED:
-                                        error_exit("Session auth failed.");
-                                        break;
-                                    default:
-                                        (void) fprintf(stderr, "Unexpected response while WRITE.\n");
-                                        break;
-                                }
-                                break;
-                            case READ:
-                                /* wait for server to allow client to send request */
-                                (void) sem_wait(sem1);
-                                server_waits = 1;
-                                shared->modus = LOGIN;
-                                shared->command = READ;
-                                (void) strncpy(shared->username, username, MAX_DATA);
-                                (void) strncpy(shared->password, password, MAX_DATA);
-                                (void) strncpy(shared->session_id, session_id, MAX_DATA);
-                                /* tell server to continue */
-                                (void) sem_post(sem2);
-                                /* wait for response */
-                                (void) sem_wait(sem3);
-                                response = shared->status;
-                                switch (response) {
-                                    case LOGIN_SUCCESS:
-                                        printf("Success! Your secret is: %s\n", shared->secret);
-                                        break;
-                                    case LOGIN_FAILED:
-                                        error_exit("Login failed.");
-                                        break;
-                                    case SESSION_FAILED:
-                                        error_exit("Session auth failed.");
-                                        break;
-                                    default:
-                                        error_exit("Unexpected response value.");
-                                        break;
-                                }
-                                break;
-                            case LOGOUT:
-                                /* wait for server to allow client to send request */
-                                errno = -1;
-                                (void) sem_wait(sem1);
-                                server_waits = 1;
-                                shared->modus = LOGIN;
-                                shared->command = LOGOUT;
-                                (void) strncpy(shared->username, username, MAX_DATA);
-                                (void) strncpy(shared->password, password, MAX_DATA);
-                                (void) strncpy(shared->session_id, session_id, MAX_DATA);
-                                /* tell server to continue */
-                                (void) sem_post(sem2);
-                                /* wait for response */
-                                (void) sem_wait(sem3);
-                                response = shared->status;
-                                switch (response) {
-                                    case LOGOUT_SUCCESS:
-                                        logout = true;
-                                        (void) printf("Logout successful. Goodbye!\n");
-                                        exit(EXIT_SUCCESS);
-                                        break;
-                                    case LOGOUT_FAILED:
-                                        error_exit("Logout failed. User does not exist in database.");
-                                        break;
-                                    case SESSION_FAILED:
-                                        error_exit("Session auth failed.");
-                                        break;
-                                    default:
-                                        error_exit("Unexpected response value: %d.", response);
-                                        break;
-                                }
-                                break;
-                            default:
-                                /* tell server to wait for a new request */
-                                (void) fprintf(stderr, "Invalid command. Please try again:\n");
-                                break;
+//                        printf("Commands:\n  1) write secret\n  2) read secret\n  3) logout\nPlease select a command (1-3):\n");
+//                        char buffer[MAX_DATA];
+//                        if (fgets(buffer, sizeof buffer, stdin) == NULL) {
+//                            error_exit("fgets");
+//                        }
+//                        cmd command = (int) strtol(buffer, (char **)NULL, 10);
+//                        /* now switch between the commands */
+//                        switch (command) {
+//                            case WRITE:
+//                                DEBUG("Command is WRITE.\n");
+//                                char buf[MAX_DATA];
+//                                printf("Write secret here, commit with [RETURN]:\n");
+//                                if (fgets(buf, sizeof buf, stdin) == NULL) {
+//                                    error_exit("fgets secret");
+//                                }
+//                                int len = strlen(buf);
+//                                if (buf[len - 1] == '\n') {
+//                                    buf[len - 1] = '\0';
+//                                }
+//                                /* wait for server to allow client to send request */
+//                                (void) sem_wait(sem1);
+//                                server_waits = 1;
+//                                shared->modus = LOGIN;
+//                                shared->command = WRITE;
+//                                (void) strncpy(shared->secret, buf, MAX_DATA);
+//                                (void) strncpy(shared->username, username, MAX_DATA);
+//                                (void) strncpy(shared->password, password, MAX_DATA);
+//                                (void) strncpy(shared->session_id, session_id, MAX_DATA);
+//                                /* tell server to continue */
+//                                (void) sem_post(sem2);
+//                                (void) sem_post(sem1);
+//                                server_waits = -1;
+//                                /* wait for response */
+//                                (void) sem_wait(sem3);
+//                                response = shared->status;
+//                                /* tell server to wait for a new request */
+//                                switch (response) {
+//                                    case WRITE_SECRET_SUCCESS:
+//                                        printf("Successfully wrote the secret.\n");
+//                                        break;
+//                                    case WRITE_SECRET_FAILED:
+//                                        error_exit("Failed to write the secret. User does not exist in database.");
+//                                        break;
+//                                    case SESSION_FAILED:
+//                                        error_exit("Session auth failed.");
+//                                        break;
+//                                    default:
+//                                        (void) fprintf(stderr, "Unexpected response while WRITE.\n");
+//                                        break;
+//                                }
+//                                break;
+//                            case READ:
+//                                /* wait for server to allow client to send request */
+//                                (void) sem_wait(sem1);
+//                                server_waits = 1;
+//                                shared->modus = LOGIN;
+//                                shared->command = READ;
+//                                (void) strncpy(shared->username, username, MAX_DATA);
+//                                (void) strncpy(shared->password, password, MAX_DATA);
+//                                (void) strncpy(shared->session_id, session_id, MAX_DATA);
+//                                /* tell server to continue */
+//                                (void) sem_post(sem2);
+//                                (void) sem_post(sem1);
+//                                server_waits = -1;
+//                                /* wait for response */
+//                                (void) sem_wait(sem3);
+//                                response = shared->status;
+//                                switch (response) {
+//                                    case LOGIN_SUCCESS:
+//                                        printf("Success! Your secret is: %s\n", shared->secret);
+//                                        break;
+//                                    case LOGIN_FAILED:
+//                                        error_exit("Login failed.");
+//                                        break;
+//                                    case SESSION_FAILED:
+//                                        error_exit("Session auth failed.");
+//                                        break;
+//                                    default:
+//                                        error_exit("Unexpected response value.");
+//                                        break;
+//                                }
+//                                break;
+//                            case LOGOUT:
+//                                /* wait for server to allow client to send request */
+//                                errno = -1;
+//                                (void) sem_wait(sem1);
+//                                server_waits = 1;
+//                                shared->modus = LOGIN;
+//                                shared->command = LOGOUT;
+//                                (void) strncpy(shared->username, username, MAX_DATA);
+//                                (void) strncpy(shared->password, password, MAX_DATA);
+//                                (void) strncpy(shared->session_id, session_id, MAX_DATA);
+//                                /* tell server to continue */
+//                                (void) sem_post(sem2);
+//                                (void) sem_post(sem1);
+//                                server_waits = -1;
+//                                /* wait for response */
+//                                (void) sem_wait(sem3);
+//                                response = shared->status;
+//                                switch (response) {
+//                                    case LOGOUT_SUCCESS:
+//                                        logout = true;
+//                                        (void) printf("Logout successful. Goodbye!\n");
+//                                        exit(EXIT_SUCCESS);
+//                                        break;
+//                                    case LOGOUT_FAILED:
+//                                        error_exit("Logout failed. User does not exist in database.");
+//                                        break;
+//                                    case SESSION_FAILED:
+//                                        error_exit("Session auth failed.");
+//                                        break;
+//                                    default:
+//                                        error_exit("Unexpected response value: %d.", response);
+//                                        break;
+//                                }
+//                                break;
+//                            default:
+//                                /* tell server to wait for a new request */
+//                                (void) fprintf(stderr, "Invalid command. Please try again:\n");
+//                                break;
+//                        }
+                        if (shared->server_down != -1) {
+                            error_exit("Server is down.");
                         }
                     }
                     exit (EXIT_SUCCESS);

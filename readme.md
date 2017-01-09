@@ -1,5 +1,13 @@
 # Operating Systems Beispiel 3
 
+## TODO:
+
+- Signal verbotene Funktionen => checke signal mit flag, handle es im normalen Programmcode
+- Sem1 = 1
+- SA_RESTART
+- sig_atomic in Signal handler
+- server gibt? Nach sem_wait
+
 In dieser Aufgabe sollen Sie eine passwort-geschützte Datenbank entwickeln. Die Implementierung soll aus zwei Programmen bestehen: einem Server, der die Datenbank verwaltet und Anfragen über deren Inhalt bearbeitet, und einem Client, mit welchem der Benutzer Informationen der Datenbank vom Server setzen oder abfragen kann. Die Kommunikation zwischen den Prozessen soll mittels Shared Memory realisiert werden und die Synchronisation über Semaphore erfolgen.
 
 Der Server speichert folgende die Benutzerdaten - Name des Benutzers (username), Passwort (password) und ein Geheimnis (secret) - in einer Datenbank. Der Client soll dem Benutzer ein Interface bieten, mit dem der Benutzer diese Informationen vom Server setzen und abfragen kann.

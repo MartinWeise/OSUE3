@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <assert.h>
 #include <fcntl.h>
 #include <time.h>
@@ -79,6 +80,9 @@ static struct entry *search(struct shared_command *update);
  * @return The generated id.
  */
 static char *rdm_id(void);
+static bool sdonterm(void);
+static inline int sem_wait_nointr(sem_t *sem);
+static void debug_sem(void);
 /**
  * @brief The program entry point.
  * @param argc The argument vector.
@@ -112,6 +116,20 @@ static struct shared_command *shared = NULL;
 static int saved = -1;
 
 /* === Implementations === */
+
+static int sem_wait_nointr(sem_t *sem) {
+    while (sem_wait(sem)) {
+        if (shared->server_down) {
+            free_resources();
+            exit(EXIT_SUCCESS);
+        } else if (errno == EINTR) {
+            errno = 0;
+        } else {
+            return -1;
+        }
+    }
+    return 0;
+}
 
 static void usage(void) {
     (void) fprintf (stderr, "USAGE: %s [-l database]\n", progname);
@@ -186,6 +204,14 @@ static void parse_database(void) {
     }
 }
 
+static bool sdonterm(void) {
+    if (shared->server_down != -1) {
+        free_resources();
+        exit (EXIT_SUCCESS);
+    }
+    return true;
+}
+
 static void save(void) {
     FILE *db;
     struct entry *ptr = first;
@@ -226,6 +252,17 @@ static void error_exit (const char *fmt, ...) {
     save();
     DEBUG("Shutting down now.\n");
     exit (EXIT_FAILURE);
+}
+
+static void debug_sem(void) {
+    int sem1_v;
+    int sem2_v;
+    int sem3_v;
+    sem_getvalue(sem1, &sem1_v);
+    sem_getvalue(sem2, &sem2_v);
+    sem_getvalue(sem3, &sem3_v);
+    DEBUG("===================== REQUEST\n    sem1: %d\n    sem2: %d\n    sem3: %d\n",
+          sem1_v, sem2_v, sem3_v);
 }
 
 static void free_resources(void) {
@@ -277,8 +314,8 @@ static void free_resources(void) {
 }
 
 static void signal_handler(int sig) {
-    free_resources();
-    exit (EXIT_SUCCESS);
+    shared->server_down = 1;
+    terminating = 1;
 }
 
 static int prepend(struct shared_command *update) {
@@ -334,7 +371,6 @@ int main(int argc, char **argv) {
     s.sa_handler = signal_handler;
     (void) memcpy(&s.sa_mask, &blocked_signals, sizeof(s.sa_mask));
     s.sa_flags = SA_RESTART;
-
     for(int i = 0; i < 2; i++) {
         if (sigaction(signals[i], &s, NULL) < 0) {
             error_exit("Changing of signal failed.");
@@ -363,8 +399,9 @@ int main(int argc, char **argv) {
     if (shared == (struct shared_command*) -1) {
         error_exit("mmap did not init a shared_command.");
     }
+    shared->server_down = -1;
     /* Create Semaphores */
-    if ((sem1 = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
+    if ((sem1 = sem_open(SEM1_NAME, O_CREAT | O_EXCL, PERMISSION, 1)) == SEM_FAILED) {
         error_exit("Couldn't create semaphore 1.");
     }
     if ((sem2 = sem_open(SEM2_NAME, O_CREAT | O_EXCL, PERMISSION, 0)) == SEM_FAILED) {
@@ -377,10 +414,11 @@ int main(int argc, char **argv) {
     DEBUG("Server running ...\n");
 
     while (1) {
-        /* allow one client to send request */
-        (void) sem_post(sem1);
         /* wait for request */
-        (void) sem_wait(sem2);
+//        int r;
+//        sem_wait_nointr(sem2);
+        sdonterm();
+//        debug_sem();
         switch (shared->modus) {
             case LOGIN:
                 switch (shared->command) {

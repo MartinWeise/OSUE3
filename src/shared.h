@@ -77,6 +77,8 @@ struct shared_command {
     char password[MAX_DATA];
     /** @brief Holds the secret of a user. */
     char secret[MAX_DATA];
+    /** @brief Indicates a termination of the server. */
+    int server_down;
 };
 
 /* === Macros === */
