@@ -80,9 +80,7 @@ static struct entry *search(struct shared_command *update);
  * @return The generated id.
  */
 static char *rdm_id(void);
-static bool sdonterm(void);
-static inline int sem_wait_nointr(sem_t *sem);
-static void debug_sem(void);
+static int sem_wait_nointr(sem_t *sem);
 /**
  * @brief The program entry point.
  * @param argc The argument vector.
@@ -116,20 +114,6 @@ static struct shared_command *shared = NULL;
 static int saved = -1;
 
 /* === Implementations === */
-
-static int sem_wait_nointr(sem_t *sem) {
-    while (sem_wait(sem)) {
-        if (shared->server_down) {
-            free_resources();
-            exit(EXIT_SUCCESS);
-        } else if (errno == EINTR) {
-            errno = 0;
-        } else {
-            return -1;
-        }
-    }
-    return 0;
-}
 
 static void usage(void) {
     (void) fprintf (stderr, "USAGE: %s [-l database]\n", progname);
@@ -204,14 +188,6 @@ static void parse_database(void) {
     }
 }
 
-static bool sdonterm(void) {
-    if (shared->server_down != -1) {
-        free_resources();
-        exit (EXIT_SUCCESS);
-    }
-    return true;
-}
-
 static void save(void) {
     FILE *db;
     struct entry *ptr = first;
@@ -222,7 +198,7 @@ static void save(void) {
     if ((db = fopen("auth-server.db.csv", "w+")) == NULL) {
         error_exit("Couldn't open the database file.");
     }
-    DEBUG("\nSaving to auth-server.db.csv.\n");
+    DEBUG("Saving to auth-server.db.csv.\n");
     while (ptr != NULL) {
         (void) fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
         DEBUG("> u: %s; p: %s; s: %s; sessid: %s\n", ptr->username, ptr->password, ptr->secret, ptr->session_id);
@@ -254,15 +230,19 @@ static void error_exit (const char *fmt, ...) {
     exit (EXIT_FAILURE);
 }
 
-static void debug_sem(void) {
-    int sem1_v;
-    int sem2_v;
-    int sem3_v;
-    sem_getvalue(sem1, &sem1_v);
-    sem_getvalue(sem2, &sem2_v);
-    sem_getvalue(sem3, &sem3_v);
-    DEBUG("===================== REQUEST\n    sem1: %d\n    sem2: %d\n    sem3: %d\n",
-          sem1_v, sem2_v, sem3_v);
+static int sem_wait_nointr(sem_t *sem) {
+    int r;
+    while ((r = sem_wait(sem)) == -1) {
+        if (shared->server_down) {
+            free_resources();
+            exit(EXIT_SUCCESS);
+        } else if (errno == EINTR) {
+            errno = 0;
+        } else {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 static void free_resources(void) {
@@ -283,6 +263,7 @@ static void free_resources(void) {
         first = first->next;
         free(temp);
     }
+    DEBUG("Removing shared memory and semaphors.\n");
     /* Unmap the shared memory */
     if (munmap(shared, sizeof *shared) == -1) {
         error_exit("Couldn't unmap shared memory.");
@@ -315,7 +296,6 @@ static void free_resources(void) {
 
 static void signal_handler(int sig) {
     shared->server_down = 1;
-    terminating = 1;
 }
 
 static int prepend(struct shared_command *update) {
@@ -370,7 +350,7 @@ int main(int argc, char **argv) {
     }
     s.sa_handler = signal_handler;
     (void) memcpy(&s.sa_mask, &blocked_signals, sizeof(s.sa_mask));
-    s.sa_flags = SA_RESTART;
+    s.sa_flags = SA_NODEFER;
     for(int i = 0; i < 2; i++) {
         if (sigaction(signals[i], &s, NULL) < 0) {
             error_exit("Changing of signal failed.");
@@ -413,12 +393,9 @@ int main(int argc, char **argv) {
 
     DEBUG("Server running ...\n");
 
-    while (1) {
+    while (shared->server_down == -1) {
         /* wait for request */
-//        int r;
-//        sem_wait_nointr(sem2);
-        sdonterm();
-//        debug_sem();
+        sem_wait_nointr(sem2);
         switch (shared->modus) {
             case LOGIN:
                 switch (shared->command) {
