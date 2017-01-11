@@ -80,7 +80,6 @@ static struct entry *search(struct shared_command *update);
  * @return The generated id.
  */
 static char *rdm_id(void);
-static int sem_wait_nointr(sem_t *sem);
 /**
  * @brief The program entry point.
  * @param argc The argument vector.
@@ -163,9 +162,11 @@ static void parse_database(void) {
         struct entry *data;
 
         while (fgets(line, MAX_DATA, database)) {
-            char* tmp = strdup(line);
-            char* tok;
-            for (i=0, tok = strtok(tmp, ";"); tok && *tok; tok = strtok(NULL, ";\n"), i++) {
+            char *tmp, *tok;
+            if ((tmp = strdup(line)) == NULL) {
+                error_exit("strdup failed.");
+            }
+            for (i=0, tok = strtok(tmp, ";"); tok != NULL; tok = strtok(NULL, ";\n"), i++) {
                 switch(i) {
                     case 0:
                         data = malloc(sizeof(struct entry));
@@ -228,21 +229,6 @@ static void error_exit (const char *fmt, ...) {
     save();
     DEBUG("Shutting down now.\n");
     exit (EXIT_FAILURE);
-}
-
-static int sem_wait_nointr(sem_t *sem) {
-    int r;
-    while ((r = sem_wait(sem)) == -1) {
-        if (shared->server_down) {
-            free_resources();
-            exit(EXIT_SUCCESS);
-        } else if (errno == EINTR) {
-            errno = 0;
-        } else {
-            return -1;
-        }
-    }
-    return 0;
 }
 
 static void free_resources(void) {
@@ -350,7 +336,8 @@ int main(int argc, char **argv) {
     }
     s.sa_handler = signal_handler;
     (void) memcpy(&s.sa_mask, &blocked_signals, sizeof(s.sa_mask));
-    s.sa_flags = SA_NODEFER;
+    s.sa_flags = SIGQUIT;
+    s.sa_flags = SIGINT;
     for(int i = 0; i < 2; i++) {
         if (sigaction(signals[i], &s, NULL) < 0) {
             error_exit("Changing of signal failed.");
@@ -395,7 +382,9 @@ int main(int argc, char **argv) {
 
     while (shared->server_down == -1) {
         /* wait for request */
-        sem_wait_nointr(sem2);
+        while (sem_wait(sem2) == -1) {
+            error_exit("Client quit.");
+        }
         switch (shared->modus) {
             case LOGIN:
                 switch (shared->command) {
@@ -444,7 +433,9 @@ int main(int argc, char **argv) {
                         break;
                 }
                 /* tell client to continue */
-                (void) sem_post(sem3);
+                if (sem_post(sem3) == -1) {
+                    error_exit("sem_post failed.");
+                }
                 break;
             case REGISTER:
                 if (prepend(shared) == -1) {
@@ -453,7 +444,9 @@ int main(int argc, char **argv) {
                     shared->status = REGISTER_SUCCESS;
                 }
                 /* tell client to continue */
-                (void) sem_post(sem3);
+                if (sem_post(sem3) == -1) {
+                    error_exit("sem_post failed.");
+                }
                 break;
             default:
                 break;

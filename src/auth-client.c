@@ -28,7 +28,7 @@
 /* === Global Variables === */
 
 /** @brief Used to terminate the client only once. */
-static sig_atomic_t terminating = -1;
+volatile sig_atomic_t terminating = -1;
 /** @brief Semaphor to allow client the initial request. @details Is a binary semaphor. */
 extern sem_t *sem1;
 /** @brief Semaphor to allow client further commands when logged in. @details Is a binary semaphor. */
@@ -43,6 +43,8 @@ static char *username;
 static char *password;
 /** @brief Holds the session id for logged-in requests. */
 static char session_id[MAX_DATA];
+/** @brief Holds the secret, once set */
+static char secret[MAX_DATA];
 /** @brief The shared memory file descriptor */
 static int shmfd;
 /** @brief Flag for releasing the used semaphores in case of a client crash
@@ -81,8 +83,6 @@ static void parse_args(int argc, char **argv);
  * @param sig Signal code.
  */
 static void signal_handler(int sig);
-
-static int sem_wait_nointr(sem_t *sem);
 /**
  * @brief The program entry point.
  * @param argc The argument vector.
@@ -164,11 +164,15 @@ static void free_resources(void) {
     if (server_waits != -1) {
         shared->command = COMMAND_NONE;
         shared->modus = MODE_UNSET;
-        sem_post(sem2);
+        if (sem_post(sem2) == -1) {
+            error_exit("Server quit.");
+        }
     }
     /* Close shared memory */
     if (shmfd != -1) {
-        (void) close (shmfd);
+        if (close (shmfd) == -1) {
+            error_exit("Couldn't close shared memory.");
+        }
     }
     /* Unmap the shared memory */
     if (munmap(shared, sizeof *shared) == -1) {
@@ -186,34 +190,18 @@ static void free_resources(void) {
     }
 }
 
-static int sem_wait_nointr(sem_t *sem) {
-    int r;
-    while ((r = sem_wait(sem)) == -1) {
-        if (shared->server_down) {
-            DEBUG("Server down.\n");
-            free_resources();
-            exit(EXIT_SUCCESS);
-        } else if (errno == EINTR) {
-            errno = 0;
-        } else {
-            return -1;
-        }
-    }
-    return 0;
-}
-
 static void signal_handler(int sig) {
     terminating = 1;
 }
 
 int main(int argc, char **argv) {
-    bool logout = false;
     const int signals[] = {SIGINT, SIGTERM};
     struct sigaction s;
     sigset_t blocked_signals;
     status response;
 
     session_id[0] = 0;
+    secret[0] = 0;
     progname = argv[0];
     /* Fill set with all signals */
     if(sigfillset(&blocked_signals) < 0) {
@@ -221,7 +209,8 @@ int main(int argc, char **argv) {
     }
     s.sa_handler = signal_handler;
     (void) memcpy(&s.sa_mask, &blocked_signals, sizeof(s.sa_mask));
-    s.sa_flags = SA_NODEFER;
+    s.sa_flags = SIGQUIT;
+    s.sa_flags = SIGINT;
     for(int i = 0; i < 2; i++) {
         if (sigaction(signals[i], &s, NULL) < 0) {
             error_exit("Changing of signal failed.");
@@ -253,7 +242,9 @@ int main(int argc, char **argv) {
     DEBUG("Client running ...\n");
 
     /* wait for server to allow client to send request */
-    (void) sem_wait_nointr(sem1);
+    while (shared->server_down != -1 || sem_wait(sem1) == -1) {
+        error_exit("Server quit.");
+    }
     server_waits = 1;
     (void) strncpy(shared->username, username, MAX_DATA);
     (void) strncpy(shared->password, password, MAX_DATA);
@@ -263,12 +254,16 @@ int main(int argc, char **argv) {
         case REGISTER:
             shared->modus = REGISTER;
             /* tell server to continue */
-            (void) sem_post(sem2);
-            (void) sem_post(sem1);
+            if (sem_post(sem2) == -1) {
+                error_exit("Server quit.");
+            }
+            if (sem_post(sem1) == -1) {
+                error_exit("Server quit.");
+            }
             server_waits = -1;
             /* wait for response */
-            if (sem_wait_nointr(sem3) == -1) {
-                error_exit("sem_wait(sem3)");
+            while (shared->server_down != -1 || sem_wait(sem3) == -1) {
+                error_exit("Server quit");
             }
             switch (shared->status) {
                 case REGISTER_SUCCESS:
@@ -286,20 +281,29 @@ int main(int argc, char **argv) {
         case LOGIN:
             shared->modus = LOGIN;
             /* tell server to continue */
-            (void) sem_post(sem2);
-            (void) sem_post(sem1);
+            if (sem_post(sem2) == -1) {
+                error_exit("Server quit.");
+            }
+            if (sem_post(sem1) == -1) {
+                error_exit("Server quit.");
+            }
             server_waits = -1;
             /* wait for response */
-            (void) sem_wait_nointr(sem3);
+            while (shared->server_down != -1 || sem_wait(sem3) == -1) {
+                error_exit("Server quit.");
+            }
             response = shared->status;
             switch (response) {
                 case LOGIN_SUCCESS:
                     strncpy(session_id, shared->session_id, MAX_DATA);
-                    while (!logout) {
+                    while (terminating == -1) {
                         printf("Commands:\n  1) write secret\n  2) read secret\n  3) logout\nPlease select a command (1-3):\n");
                         char buffer[MAX_DATA];
                         if (fgets(buffer, sizeof buffer, stdin) == NULL) {
                             error_exit("fgets");
+                        }
+                        if (shared->server_down != -1) {
+                            error_exit("Server quit.");
                         }
                         cmd command = (int) strtol(buffer, (char **)NULL, 10);
                         /* now switch between the commands */
@@ -316,7 +320,7 @@ int main(int argc, char **argv) {
                                     buf[len - 1] = '\0';
                                 }
                                 /* wait for server to allow client to send request */
-                                if (sem_wait_nointr(sem1) == -1) {
+                                while (shared->server_down != -1 || sem_wait(sem1) == -1) {
                                     error_exit("Server quit.");
                                 }
                                 server_waits = 1;
@@ -327,11 +331,15 @@ int main(int argc, char **argv) {
                                 (void) strncpy(shared->password, password, MAX_DATA);
                                 (void) strncpy(shared->session_id, session_id, MAX_DATA);
                                 /* tell server to continue */
-                                (void) sem_post(sem2);
-                                (void) sem_post(sem1);
+                                if (sem_post(sem2) == -1) {
+                                    error_exit("Server quit.");
+                                }
+                                if (sem_post(sem1) == -1) {
+                                    error_exit("Server quit.");
+                                }
                                 server_waits = -1;
                                 /* wait for response */
-                                if (sem_wait_nointr(sem3) == -1) {
+                                while (shared->server_down != -1 || sem_wait(sem3) == -1) {
                                     error_exit("Server quit.");
                                 }
                                 response = shared->status;
@@ -353,7 +361,7 @@ int main(int argc, char **argv) {
                                 break;
                             case READ:
                                 /* wait for server to allow client to send request */
-                                if (sem_wait_nointr(sem1) == -1) {
+                                while (shared->server_down != -1 || sem_wait(sem1) == -1) {
                                     error_exit("Server quit.");
                                 }
                                 server_waits = 1;
@@ -362,18 +370,27 @@ int main(int argc, char **argv) {
                                 (void) strncpy(shared->username, username, MAX_DATA);
                                 (void) strncpy(shared->password, password, MAX_DATA);
                                 (void) strncpy(shared->session_id, session_id, MAX_DATA);
+                                (void) strncpy(secret, shared->secret, MAX_DATA);
                                 /* tell server to continue */
-                                (void) sem_post(sem2);
-                                (void) sem_post(sem1);
+                                if (sem_post(sem2) == -1) {
+                                    error_exit("Server quit.");
+                                }
+                                if (sem_post(sem1) == -1) {
+                                    error_exit("Server quit.");
+                                }
                                 server_waits = -1;
                                 /* wait for response */
-                                if (sem_wait_nointr(sem3) == -1) {
+                                while (shared->server_down != -1 || sem_wait(sem3) == -1) {
                                     error_exit("Server quit.");
                                 }
                                 response = shared->status;
                                 switch (response) {
                                     case LOGIN_SUCCESS:
-                                        printf("Success! Your secret is: %s\n", shared->secret);
+                                        if (strlen(secret) == 0) {
+                                            (void) printf("No secret was set on server!\n");
+                                            break;
+                                        }
+                                        (void) printf("Success! Your secret is: %s\n", secret);
                                         break;
                                     case LOGIN_FAILED:
                                         error_exit("Login failed.");
@@ -388,8 +405,7 @@ int main(int argc, char **argv) {
                                 break;
                             case LOGOUT:
                                 /* wait for server to allow client to send request */
-                                errno = -1;
-                                if (sem_wait_nointr(sem1) == -1) {
+                                while (shared->server_down != -1 || sem_wait(sem1) == -1) {
                                     error_exit("Server quit.");
                                 }
                                 server_waits = 1;
@@ -399,17 +415,21 @@ int main(int argc, char **argv) {
                                 (void) strncpy(shared->password, password, MAX_DATA);
                                 (void) strncpy(shared->session_id, session_id, MAX_DATA);
                                 /* tell server to continue */
-                                (void) sem_post(sem2);
-                                (void) sem_post(sem1);
+                                if (sem_post(sem2) == -1) {
+                                    error_exit("Server quit.");
+                                }
+                                if (sem_post(sem1) == -1) {
+                                    error_exit("Server quit.");
+                                }
                                 server_waits = -1;
                                 /* wait for response */
-                                if (sem_wait_nointr(sem3) == -1) {
+                                while (shared->server_down != -1 || sem_wait(sem3) == -1) {
                                     error_exit("Server quit.");
                                 }
                                 response = shared->status;
                                 switch (response) {
                                     case LOGOUT_SUCCESS:
-                                        logout = true;
+                                        terminating = 1;
                                         (void) printf("Logout successful. Goodbye!\n");
                                         exit(EXIT_SUCCESS);
                                         break;
@@ -429,6 +449,9 @@ int main(int argc, char **argv) {
                                 (void) fprintf(stderr, "Invalid command. Please try again:\n");
                                 break;
                         }
+                    }
+                    if (shared->server_down != -1) {
+                        error_exit("Server down.");
                     }
                     exit (EXIT_SUCCESS);
                     break;
