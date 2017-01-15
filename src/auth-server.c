@@ -169,7 +169,9 @@ static void parse_database(void) {
             for (i=0, tok = strtok(tmp, ";"); tok != NULL; tok = strtok(NULL, ";\n"), i++) {
                 switch(i) {
                     case 0:
-                        data = malloc(sizeof(struct entry));
+                        if ((data = malloc(sizeof(struct entry))) == NULL) {
+                            error_exit("Failed to allocate memory for db entry.");
+                        }
                         (void) strncpy(data->username, tok, MAX_DATA);
                         break;
                     case 1:
@@ -202,7 +204,7 @@ static void save(void) {
     DEBUG("Saving to auth-server.db.csv.\n");
     while (ptr != NULL) {
         (void) fprintf(db, "%s;%s;%s\n", ptr->username, ptr->password, ptr->secret);
-        DEBUG("> u: %s; p: %s; s: %s; sessid: %s\n", ptr->username, ptr->password, ptr->secret, ptr->session_id);
+        DEBUG("> u: %s; p: %s; s: %s\n", ptr->username, ptr->password, ptr->secret);
         ptr = ptr->next;
     }
     if (fclose(db) == -1) {
@@ -281,14 +283,20 @@ static void free_resources(void) {
 }
 
 static void signal_handler(int sig) {
-    shared->server_down = 1;
+    DEBUG("Signal caught: %d", sig);
+    if (sig == SIGINT || sig == SIGTERM) {
+        shared->server_down = 1;
+    }
 }
 
 static int prepend(struct shared_command *update) {
     if (search(update) != NULL) {
         return -1;
     }
-    struct entry *tmp = malloc(sizeof(struct entry));
+    struct entry *tmp;
+    if ((tmp = malloc(sizeof(struct entry))) == NULL) {
+        error_exit("Failed to allocate memory for appending the db.");
+    }
     (void) strncpy(tmp->username, update->username, MAX_DATA);
     (void) strncpy(tmp->password, update->password, MAX_DATA);
     (void) strncpy(tmp->secret, update->secret, MAX_DATA);
@@ -326,21 +334,20 @@ static char *rdm_id(void) {
 int main(int argc, char **argv) {
     const int signals[] = {SIGINT, SIGTERM};
     struct sigaction s;
-    sigset_t blocked_signals;
-    struct entry *tmp = malloc(sizeof(struct entry));
+    struct entry *tmp;
+    if ((tmp = malloc(sizeof(struct entry))) == NULL) {
+        error_exit("Failed to allocate memory for temporary list element.");
+    }
 
     progname = argv[0];
-    /* Fill set with all signals */
-    if(sigfillset(&blocked_signals) < 0) {
-        error_exit("Failed to fill signal set.");
-    }
     s.sa_handler = signal_handler;
-    (void) memcpy(&s.sa_mask, &blocked_signals, sizeof(s.sa_mask));
-    s.sa_flags = SIGQUIT;
-    s.sa_flags = SIGINT;
+    s.sa_flags   = 0;
+    if(sigfillset(&s.sa_mask) < 0) {
+        error_exit("sigfillset");
+    }
     for(int i = 0; i < 2; i++) {
         if (sigaction(signals[i], &s, NULL) < 0) {
-            error_exit("Changing of signal failed.");
+            error_exit("sigaction");
         }
     }
 
@@ -349,7 +356,6 @@ int main(int argc, char **argv) {
     }
 
     parse_database();
-
     /* Open shared memory object SHM_NAME in for reading and writing,
      * create it if it does not exist */
     if ((shmfd = shm_open(SHM_NAME, O_RDWR | O_CREAT, PERMISSION)) == -1) {
@@ -383,6 +389,9 @@ int main(int argc, char **argv) {
     while (shared->server_down == -1) {
         /* wait for request */
         while (sem_wait(sem2) == -1) {
+            if (shared->server_down == -1) {
+                continue;
+            }
             error_exit("Client quit.");
         }
         switch (shared->modus) {

@@ -22,14 +22,14 @@ src/auth-server: src/auth-server.o src/shared.o
 src/auth-client: src/auth-client.o src/shared.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
-test: all
-	sh test/test.sh
-
 zip:
 	tar -cvzf submission-osue3.tgz src/*.c src/*.h Makefile doc/Doxyfile
 
 doxygen:
 	doxygen doc/Doxyfile
+
+test: src/auth-server src/auth-client
+	sh test/test.sh
 
 clean:
 	rm -f src/auth-server src/auth-client src/*.o
